@@ -38,11 +38,12 @@ export function D20Icon({ color, size }: IconProps) {
       <Line x1="12" y1="2" x2="12" y2="5.5" stroke={color} strokeWidth={STROKE} />
       <Line x1="18.5" y1="17" x2="20.66" y2="17" stroke={color} strokeWidth={STROKE} />
       <Line x1="5.5" y1="17" x2="3.34" y2="17" stroke={color} strokeWidth={STROKE} />
-      {/* The number 20 on the front face. */}
+      {/* The number 20 on the front face, small enough to sit inside the triangle without
+          touching its edges. */}
       <SvgText
         x="12"
-        y="14.6"
-        fontSize="6.5"
+        y="15.2"
+        fontSize="5.2"
         fontWeight="bold"
         fill={color}
         textAnchor="middle">

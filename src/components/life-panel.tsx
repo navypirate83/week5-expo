@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import Svg, { Circle, Line } from 'react-native-svg';
 
 import { RichText } from '@/components/rich-text';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { DefeatColor, Spacing } from '@/constants/theme';
+import { PANEL_COLORS, type ManaColor } from '@/constants/mana-colors';
+import { Spacing } from '@/constants/theme';
 import { useHaptics } from '@/hooks/use-haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { isDefeated } from '@/lib/defeat';
@@ -13,15 +15,51 @@ import { isDefeated } from '@/lib/defeat';
 // A typed character is never perfectly centered, because fonts leave extra space above and
 // below the letters. Bars are placed by the layout, so they sit exactly in the middle.
 //   plus - true draws a + (a horizontal bar crossed by a vertical bar); false draws a -
-function AdjustSign({ plus = false }: { plus?: boolean }) {
-  const theme = useTheme();
+//   color - the color of the bars (the panel's text color)
+function AdjustSign({ plus = false, color }: { plus?: boolean; color: string }) {
   return (
     // A box the size of the sign. The buttons center this box, and the bars are centered inside it.
     <View style={styles.sign}>
       {/* The horizontal bar, used by both + and -. */}
-      <View style={[styles.bar, styles.horizontalBar, { backgroundColor: theme.text }]} />
+      <View style={[styles.bar, styles.horizontalBar, { backgroundColor: color }]} />
       {/* The vertical bar, only for +. It crosses the horizontal one in the middle. */}
-      {plus && <View style={[styles.bar, styles.verticalBar, { backgroundColor: theme.text }]} />}
+      {plus && <View style={[styles.bar, styles.verticalBar, { backgroundColor: color }]} />}
+    </View>
+  );
+}
+
+// The mark shown in the background of a defeated player's panel: a circle with a slash through
+// it (like a "no entry" sign), outlined in white. It is drawn on a 100 x 100 grid and
+// stretched to fit the panel, staying round. A thin dark edge is drawn under the white so the
+// mark still shows up on a light panel. "pointerEvents none" lets taps pass straight through.
+function DefeatMark() {
+  // The slash runs from the top left to the bottom right, ending exactly on the circle.
+  const CENTER = 50;
+  const RADIUS = 38;
+  const EDGE = RADIUS * Math.SQRT1_2; // how far the slash's ends are from the center, across and down
+  const shapes = [
+    { color: 'rgba(0, 0, 0, 0.35)', width: 10 }, // the dark edge, a little thicker
+    { color: '#FFFFFF', width: 6 }, // the white outline on top
+  ];
+  return (
+    <View style={styles.defeatMark} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox="0 0 100 100">
+        {shapes.map(({ color, width }) => (
+          <Circle key={`circle-${color}`} cx={CENTER} cy={CENTER} r={RADIUS} stroke={color} strokeWidth={width} fill="none" />
+        ))}
+        {shapes.map(({ color, width }) => (
+          <Line
+            key={`slash-${color}`}
+            x1={CENTER - EDGE}
+            y1={CENTER - EDGE}
+            x2={CENTER + EDGE}
+            y2={CENTER + EDGE}
+            stroke={color}
+            strokeWidth={width}
+            strokeLinecap="round"
+          />
+        ))}
+      </Svg>
     </View>
   );
 }
@@ -74,7 +112,8 @@ function formatChange(change: number): string {
 //   - Tap the corner and they SWAP: the big number becomes the poison counters (the + and -
 //     buttons now change those), and the corner shows the life total.
 //   - Tap the corner again and they swap back.
-// When the player is defeated (see src/lib/defeat.ts) the whole panel turns medium red.
+// When the player is defeated (see src/lib/defeat.ts) a white circle with a slash through it
+// appears in the background of the panel.
 //
 //   life           - the player's life total
 //   poison         - the player's poison counters
@@ -85,6 +124,8 @@ function formatChange(change: number): string {
 //   rotation       - how far the panel is turned on the screen (0, 90, 180 or 270 degrees). The
 //                    panel doesn't turn itself this way (the layout does that), it only needs to
 //                    know so that sliding a finger "down" means down for the player reading it
+//   color          - the color chosen for this player in Settings: one of the five colors of
+//                    Magic, or 'C' for none (the normal look). It colors the whole panel.
 //   mostCommanderDamage - the most commander damage this player has taken from any ONE
 //                    player. At 21 or more they are defeated.
 //   commanderView  - set while ANOTHER player has commander damage open: this panel then shows
@@ -105,6 +146,7 @@ export function LifePanel({
   onAdjustPoison,
   upsideDown = false,
   rotation = 0,
+  color = 'C',
   mostCommanderDamage = 0,
   commanderView,
   onSwipe,
@@ -119,6 +161,7 @@ export function LifePanel({
   onAdjustPoison: (change: number) => void;
   upsideDown?: boolean;
   rotation?: 0 | 90 | 180 | 270;
+  color?: ManaColor;
   mostCommanderDamage?: number;
   commanderView?: CommanderView;
   onSwipe?: (direction: 'left' | 'right') => void;
@@ -128,6 +171,12 @@ export function LifePanel({
 }) {
   const theme = useTheme();
   const { tick } = useHaptics();
+  // The colors this panel is drawn in. With a chosen color, its own background, text and button
+  // colors are used. With 'none', the app's normal colors for the current theme are used.
+  const palette = color === 'C' ? null : PANEL_COLORS[color];
+  const textColor = palette ? palette.text : theme.text;
+  const buttonColor = palette ? palette.button : theme.backgroundSelected;
+
   // True when this player has lost: life at 0 or below, poison at the maximum or more, or 21
   // commander damage from one player.
   const defeated = isDefeated(life, poison, maxPoison, mostCommanderDamage);
@@ -291,10 +340,13 @@ export function LifePanel({
         styles.panel,
         size === 'compact' && styles.compactPanel,
         size === 'small' && styles.compactPanel,
-        // A defeated player's panel turns medium red, replacing the normal background.
-        defeated && { backgroundColor: DefeatColor },
+        // The chosen color replaces the normal background.
+        palette && { backgroundColor: palette.background },
         upsideDown && { transform: [{ rotate: '180deg' }] },
       ]}>
+      {/* The mark showing this player has lost. It comes first so everything else is drawn on top of it. */}
+      {defeated && <DefeatMark />}
+
       {/* LEFT SIDE: the + button above the - button. */}
       <View style={[styles.buttons, size !== 'normal' && styles.compactButtons]}>
         <Pressable
@@ -305,10 +357,10 @@ export function LifePanel({
             styles.adjustButton,
             size === 'compact' && styles.compactAdjustButton,
             size === 'small' && styles.smallAdjustButton,
-            { backgroundColor: theme.backgroundSelected },
+            { backgroundColor: buttonColor },
             pressed && styles.pressed,
           ]}>
-          <AdjustSign plus />
+          <AdjustSign plus color={textColor} />
         </Pressable>
         <Pressable
           onPress={() => handleTap(-1)}
@@ -318,10 +370,10 @@ export function LifePanel({
             styles.adjustButton,
             size === 'compact' && styles.compactAdjustButton,
             size === 'small' && styles.smallAdjustButton,
-            { backgroundColor: theme.backgroundSelected },
+            { backgroundColor: buttonColor },
             pressed && styles.pressed,
           ]}>
-          <AdjustSign />
+          <AdjustSign color={textColor} />
         </Pressable>
       </View>
 
@@ -331,7 +383,7 @@ export function LifePanel({
       <View style={styles.lifeArea}>
         <View style={[styles.numberBox, { transform: [{ rotate: `${numberDegrees}deg` }] }]}>
           {commanderView && (
-            <ThemedText type="smallBold" themeColor="textSecondary" selectable={false} style={styles.caption}>
+            <ThemedText type="smallBold" selectable={false} style={[styles.caption, { color: textColor }]}>
               Commander damage to Player {commanderView.viewer}
             </ThemedText>
           )}
@@ -339,6 +391,7 @@ export function LifePanel({
             accessibilityLabel={`Player ${playerNumber} ${counterName}: ${bigNumber}`}
             style={[
               styles.life,
+              { color: textColor },
               size === 'compact' && styles.compactLife,
               size === 'small' && styles.smallLife,
             ]}
@@ -369,7 +422,7 @@ export function LifePanel({
 
       {/* A reminder, shown only while THIS player has commander damage open. */}
       {showCommanderHint && (
-        <ThemedText type="small" themeColor="textSecondary" selectable={false} style={styles.hint}>
+        <ThemedText type="small" selectable={false} style={[styles.hint, { color: textColor }]}>
           Swipe right to exit
         </ThemedText>
       )}
@@ -391,11 +444,11 @@ export function LifePanel({
         }
         style={({ pressed }) => [styles.counter, pressed && styles.pressed]}>
         {showingPoison ? (
-          <ThemedText style={styles.counterNumber}>{life}</ThemedText>
+          <ThemedText style={[styles.counterNumber, { color: textColor }]}>{life}</ThemedText>
         ) : (
           <>
             <RichText size={COUNTER_SYMBOL_SIZE}>{'{H}'}</RichText>
-            <ThemedText style={styles.counterNumber}>{poison}</ThemedText>
+            <ThemedText style={[styles.counterNumber, { color: textColor }]}>{poison}</ThemedText>
           </>
         )}
       </Pressable>
@@ -518,6 +571,16 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
     fontWeight: '700',
+  },
+  // The circle-with-a-slash mark: fills the panel, with some space around it, and sits behind
+  // everything. Slightly see-through so the numbers on top stay readable.
+  defeatMark: {
+    position: 'absolute',
+    top: Spacing.three,
+    bottom: Spacing.three,
+    left: Spacing.three,
+    right: Spacing.three,
+    opacity: 0.7,
   },
   // The big number and (in commander damage) its caption, stacked and centered. It is turned
   // as a unit to face the player who opened commander damage.

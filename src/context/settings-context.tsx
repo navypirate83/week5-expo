@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { DEFAULT_PLAYER_COLOR, MANA_COLORS, MAX_PLAYER_COLORS, type ManaColor } from '@/constants/mana-colors';
+
 // The three choices for the Theme setting.
 export type ThemeChoice = 'light' | 'system' | 'dark';
 
@@ -24,6 +26,9 @@ type Settings = {
   maxPlayers: MaxPlayers;
   startingLife: StartingLife; // the life each player starts with
   maxPoison: MaxPoison; // how many poison counters knock a player out
+  // The color of each player's life total area: playerColors[0] is Player 1, and so on.
+  // There is always one for each of the 6 possible players.
+  playerColors: ManaColor[];
 };
 
 // What other files get when they ask for the settings: the current values,
@@ -41,6 +46,7 @@ const DEFAULT_SETTINGS: Settings = {
   maxPlayers: 4,
   startingLife: 20,
   maxPoison: 10,
+  playerColors: Array.from({ length: MAX_PLAYER_COLORS }, () => DEFAULT_PLAYER_COLOR),
 };
 
 // The name of the "drawer" on the phone where we keep the saved settings.
@@ -63,6 +69,14 @@ function readSavedSettings(saved: unknown): Settings {
     startingLife:
       STARTING_LIFE_OPTIONS.find((option) => option === data.startingLife) ?? DEFAULT_SETTINGS.startingLife,
     maxPoison: MAX_POISON_OPTIONS.find((option) => option === data.maxPoison) ?? DEFAULT_SETTINGS.maxPoison,
+    // Check each saved color on its own. Anything missing or unknown (including settings saved
+    // before colors existed) becomes the default color for that player.
+    playerColors: DEFAULT_SETTINGS.playerColors.map(
+      (fallback, index) =>
+        MANA_COLORS.find(
+          (color) => Array.isArray(data.playerColors) && color === data.playerColors[index],
+        ) ?? fallback,
+    ),
   };
 }
 

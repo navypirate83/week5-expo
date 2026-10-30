@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useGame } from '@/context/game-context';
+import { useSettings } from '@/context/settings-context';
 import { useTheme } from '@/hooks/use-theme';
 import { playerRotations } from '@/lib/player-layout';
 
@@ -40,6 +41,8 @@ export function LifeScreen({
   onExit: () => void;
 }) {
   const theme = useTheme();
+  // The color each player chose for their life total area, in Settings.
+  const { settings } = useSettings();
 
   // The current game's numbers come from the game context, which saves them on the phone
   // every time they change: lives[0] is Player 1's life, lives[1] is Player 2's...,
@@ -88,6 +91,7 @@ export function LifeScreen({
         onAdjustLife={(change) => adjustLife(index, change)}
         onAdjustPoison={(change) => adjustPoison(index, change)}
         // The most commander damage this player has taken from any ONE other player: 21 defeats them.
+        color={settings.playerColors[index]}
         mostCommanderDamage={Math.max(...commander[index])}
         // While another player has commander damage open, this panel shows (and changes) the
         // damage it has dealt to them, turned to face them.
@@ -130,12 +134,6 @@ export function LifeScreen({
       </View>
     );
   }
-
-  // Where the "New game" / "Players" buttons sit, measured down from the top of the screen.
-  // With 2, 3 or 4 players the panels meet in the middle, so that's where they go. With 5 or 6
-  // there are three rows, so the middle is the middle of a row. The buttons would cover a
-  // panel, so they go on the line between the second and third rows instead.
-  const controlsTop = players >= 5 ? '66%' : '50%';
 
   return (
     <ThemedView style={styles.container}>
@@ -199,11 +197,11 @@ export function LifeScreen({
           </View>
         )}
 
-        {/* Two small buttons side by side in the middle of the screen, where the panels meet:
-              "New game" resets everyone's life, and "Players" goes back to choosing how many
-              players. ("Players" was added so you aren't stuck on this screen. Tell me if you
-              want it elsewhere.) */}
-        <View style={[styles.controls, { top: controlsTop }]} pointerEvents="box-none">
+        {/* Two small buttons side by side along the bottom of the screen, between the life
+              totals and the tab bar: "New game" resets everyone's life, and "Players" goes
+              back to choosing how many players. They sit in their own row under the panels, so
+              they never cover a life total. */}
+        <View style={styles.controls}>
           <Pressable
             onPress={newGame}
             accessibilityRole="button"
@@ -264,14 +262,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.two,
   },
-  // The row holding the two pills, floating exactly where the two panels meet (the middle of
-  // the screen). "left: 0, right: 0" plus centering puts the pair in the middle horizontally.
+  // The row holding the two pills, under the panels and centered. It takes only the height it
+  // needs, and the panels above it share all the remaining space.
   controls: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '50%',
-    marginTop: -18,
+    paddingTop: Spacing.three,
     flexDirection: 'row',
     justifyContent: 'center',
     gap: Spacing.two,

@@ -1,6 +1,7 @@
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PlayerColorPicker } from '@/components/player-color-picker';
 import {
   Dropdown,
   SegmentedControl,
@@ -96,6 +97,29 @@ export default function SettingsScreen() {
               />
             </SettingRow>
           </ThemedView>
+
+          {/* LIFE TOTAL COLORS: one line per player (as many as Max Players allows), each with
+              the five colors of Magic and "none". The choice colors that player's life total
+              area. Like every setting, it saves by itself. */}
+          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
+            LIFE TOTAL COLORS
+          </ThemedText>
+          <ThemedView type="backgroundElement" style={styles.group}>
+            {Array.from({ length: settings.maxPlayers }, (_, index) => (
+              <PlayerColorPicker
+                key={index}
+                playerNumber={index + 1}
+                value={settings.playerColors[index]}
+                onChange={(color) =>
+                  // Copy the list of colors and change only this player's.
+                  updateSetting(
+                    'playerColors',
+                    settings.playerColors.map((current, i) => (i === index ? color : current)),
+                  )
+                }
+              />
+            ))}
+          </ThemedView>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -118,6 +142,10 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.four,
     gap: Spacing.three,
+  },
+  // The small heading above the life total colors box.
+  sectionTitle: {
+    paddingTop: Spacing.two,
   },
   // The rounded box behind the settings lines.
   group: {
