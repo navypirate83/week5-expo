@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PlayerColorPicker } from '@/components/player-color-picker';
@@ -12,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHaptics } from '@/hooks/use-haptics';
+import { useTheme } from '@/hooks/use-theme';
 import {
   MAX_PLAYER_OPTIONS,
   MAX_POISON_OPTIONS,
@@ -32,6 +34,7 @@ const THEME_OPTIONS: { label: string; value: ThemeChoice }[] = [
 export default function SettingsScreen() {
   const { settings, updateSetting } = useSettings();
   const { tick } = useHaptics();
+  const theme = useTheme();
 
   return (
     // The full-screen background.
@@ -40,7 +43,22 @@ export default function SettingsScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* ScrollView lets the page scroll if the settings don't fit on a small screen. */}
         <ScrollView contentContainerStyle={styles.content}>
-          <ThemedText type="subtitle">Settings</ThemedText>
+          {/* The top row: the page title, and the "Features" button that opens the guide
+              to everything the app can do. */}
+          <View style={styles.header}>
+            <ThemedText type="subtitle">Settings</ThemedText>
+            <Pressable
+              onPress={() => router.push('/settings/features')}
+              accessibilityRole="button"
+              accessibilityLabel="Features: how to use the app"
+              style={({ pressed }) => [
+                styles.featuresButton,
+                { backgroundColor: theme.backgroundElement },
+                pressed && styles.pressed,
+              ]}>
+              <ThemedText type="smallBold">Features</ThemedText>
+            </Pressable>
+          </View>
 
           {/* The rounded box that holds all the settings lines. */}
           <ThemedView type="backgroundElement" style={styles.group}>
@@ -142,6 +160,22 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.four,
     gap: Spacing.three,
+  },
+  // The page title on the left and the Features button on the right.
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  // The small rounded Features button.
+  featuresButton: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.four,
+  },
+  // Slight dimming while pressed.
+  pressed: {
+    opacity: 0.6,
   },
   // The small heading above the life total colors box.
   sectionTitle: {

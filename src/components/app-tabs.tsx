@@ -12,7 +12,9 @@ import { useHaptics } from '@/hooks/use-haptics';
 // Each <Tabs.Screen> below is one button, and "name" must match a file in src/app/:
 //   "index"    -> src/app/index.tsx     (the main screen, with the d20 icon)
 //   "cards"    -> src/app/cards.tsx     (the card screen, with the card icon)
-//   "settings" -> src/app/settings.tsx  (the settings screen, with the gear icon)
+//   "settings" -> src/app/settings/     (the settings screen, with the gear icon. This folder
+//                                        also holds the Features guide, which is opened with
+//                                        the Features button on the settings screen)
 export default function AppTabs() {
   // Find out whether the phone is in light or dark mode, then pick matching colors.
   const scheme = useColorScheme();
