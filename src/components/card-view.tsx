@@ -87,7 +87,8 @@ export function CardView({
   );
 }
 
-// The back of a Magic card, shown in the picture's spot when no card has been chosen yet.
+// A card back, shown in the picture's spot when no card has been chosen yet. It is a simple
+// placeholder drawn for this app (not official game artwork).
 // The picture file is saved inside the app (assets/images/card-back.png), so it
 // shows even with no internet.
 export function CardBack() {
