@@ -29,6 +29,7 @@ export default function HomeScreen() {
         key={players}
         players={players}
         startingLife={settings.startingLife}
+        maxPoison={settings.maxPoison}
         onExit={() => setPlayers(null)}
       />
     );

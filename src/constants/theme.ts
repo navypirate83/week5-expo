@@ -25,6 +25,10 @@ export const Colors = {
   },
 } as const;
 
+// The medium red a player's panel turns when they are defeated. It is the same in the
+// light and dark themes so "defeated" always looks the same.
+export const DefeatColor = '#D9534F';
+
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({

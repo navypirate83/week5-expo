@@ -2,28 +2,39 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { LifePanel } from '@/components/life-panel';
+import { LifePanel, type PanelSize } from '@/components/life-panel';
+import { RotatedSlot } from '@/components/rotated-slot';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // The screen that shows everyone's life totals once the number of players is chosen.
-// Each player count gets its own layout. So far only the 2-player layout exists:
-//   - Player 1 is the bottom half of the screen (right way up, facing the phone's holder)
-//   - Player 2 is the top half, turned upside down for the person sitting across the table
+// Each player count gets its own layout:
+//   2 players: Player 1 is the bottom half (right way up, facing the phone's holder) and
+//              Player 2 is the top half, turned upside down for the person sitting across.
+//   3 players: Player 1 is the bottom half, as above. The top half is split in two:
+//              Player 2 on the left, turned 90 degrees, and Player 3 on the right, turned
+//              the other way (270 degrees), for players sitting at the phone's left and right.
+//   4 players: two rows of two sideways panels (left ones turned 90, right ones turned 270).
+//   5 players: Player 1 right way up along the bottom, and two rows of two sideways panels above.
+//   6 players: three rows of two sideways panels.
+// Players are numbered clockwise starting from Player 1 at the bottom.
 //
 //   players      - how many players are in the game
 //   startingLife - the life every player starts with (from the Starting Life Total setting)
+//   maxPoison    - how many poison counters defeat a player (from the Max Poison Counters setting)
 //   onExit       - called when "Players" is tapped, to go back to choosing the player count
 //                  ("New game" doesn't leave the screen: it just resets everyone's life)
 export function LifeScreen({
   players,
   startingLife,
+  maxPoison,
   onExit,
 }: {
   players: number;
   startingLife: number;
+  maxPoison: number;
   onExit: () => void;
 }) {
   const theme = useTheme();
@@ -31,6 +42,9 @@ export function LifeScreen({
   // Everyone's life total, in a list: lives[0] is Player 1, lives[1] is Player 2...
   // They all start at the Starting Life Total setting.
   const [lives, setLives] = useState<number[]>(() => Array.from({ length: players }, () => startingLife));
+
+  // Everyone's poison counters, in the same order. Everyone starts with none.
+  const [poisons, setPoisons] = useState<number[]>(() => Array.from({ length: players }, () => 0));
 
   // Which game this is (1, 2, 3...). It goes up each time "New game" is tapped.
   const [gameNumber, setGameNumber] = useState(1);
@@ -40,14 +54,64 @@ export function LifeScreen({
     setLives((current) => current.map((life, index) => (index === playerIndex ? life + change : life)));
   }
 
-  // Starts over: every player's life goes back to the Starting Life Total, and we stay on this screen.
+  // Changes one player's poison counters by +1 or -1. Same idea, but poison never goes below 0.
+  function adjustPoison(playerIndex: number, change: number) {
+    setPoisons((current) =>
+      current.map((poison, index) => (index === playerIndex ? Math.max(0, poison + change) : poison)),
+    );
+  }
+
+  // Starts over: every player's life goes back to the Starting Life Total, poison counters go
+  // back to 0, and we stay on this screen.
   // If you changed Starting Life Total in Settings during the game, the new value is used here.
   function newGame() {
     setLives(Array.from({ length: players }, () => startingLife));
+    setPoisons(Array.from({ length: players }, () => 0));
     // Counting up changes the panels' "key" below, which makes fresh panels. That also wipes
     // any change badge (like "+3") that was still showing from the old game.
     setGameNumber((current) => current + 1);
   }
+
+  // Builds the panel for one player. "index" is 0 for Player 1, 1 for Player 2, and so on.
+  // Every layout below uses this, so a panel works the same way wherever it is placed.
+  // "options" says how this panel is turned or sized in the layout.
+  function renderPanel(index: number, options: { upsideDown?: boolean; size?: PanelSize } = {}) {
+    return (
+      <LifePanel
+        // The key includes the game number, so "New game" makes brand new panels.
+        key={`player-${index + 1}-game-${gameNumber}`}
+        playerNumber={index + 1}
+        life={lives[index]}
+        poison={poisons[index]}
+        maxPoison={maxPoison}
+        onAdjustLife={(change) => adjustLife(index, change)}
+        onAdjustPoison={(change) => adjustPoison(index, change)}
+        upsideDown={options.upsideDown}
+        size={options.size}
+      />
+    );
+  }
+
+  // Builds a row of two panels side by side, each turned on its side:
+  //   - the LEFT one is turned 90 degrees clockwise (the top of its text points right),
+  //     for a player sitting at the phone's left edge
+  //   - the RIGHT one is turned 270 degrees (the top of its text points left),
+  //     for a player sitting at the phone's right edge
+  // "leftIndex" and "rightIndex" say which players they are (0 is Player 1).
+  function sidewaysRow(leftIndex: number, rightIndex: number, size: PanelSize) {
+    return (
+      <View style={styles.sideBySide}>
+        <RotatedSlot degrees={90}>{renderPanel(leftIndex, { size })}</RotatedSlot>
+        <RotatedSlot degrees={270}>{renderPanel(rightIndex, { size })}</RotatedSlot>
+      </View>
+    );
+  }
+
+  // Where the "New game" / "Players" buttons sit, measured down from the top of the screen.
+  // With 2, 3 or 4 players the panels meet in the middle, so that's where they go. With 5 or 6
+  // there are three rows, so the middle is the middle of a row. The buttons would cover a
+  // panel, so they go on the line between the second and third rows instead.
+  const controlsTop = players >= 5 ? '66%' : '50%';
 
   return (
     <ThemedView style={styles.container}>
@@ -56,20 +120,52 @@ export function LifeScreen({
           // THE 2-PLAYER LAYOUT: two panels stacked, with a gap between them.
           <View style={styles.panels}>
             {/* The top half: Player 2, turned upside down. */}
-            <LifePanel
-              key={`player-2-game-${gameNumber}`}
-              playerNumber={2}
-              life={lives[1]}
-              onAdjust={(change) => adjustLife(1, change)}
-              upsideDown
-            />
+            {renderPanel(1, { upsideDown: true })}
             {/* The bottom half: Player 1. */}
-            <LifePanel
-              key={`player-1-game-${gameNumber}`}
-              playerNumber={1}
-              life={lives[0]}
-              onAdjust={(change) => adjustLife(0, change)}
-            />
+            {renderPanel(0)}
+          </View>
+        ) : players === 3 ? (
+          // THE 3-PLAYER LAYOUT: Player 1 is the bottom half. The top half is split into two
+          // panels side by side, each turned on its side, for players sitting at the left
+          // and right edges of the phone.
+          <View style={styles.panels}>
+            {/* Top left: Player 2. Top right: Player 3. */}
+            {sidewaysRow(1, 2, 'compact')}
+            {/* The bottom half: Player 1, unchanged. */}
+            {renderPanel(0)}
+          </View>
+        ) : players === 4 ? (
+          // THE 4-PLAYER LAYOUT: two rows of two sideways panels. The players are numbered
+          // clockwise from the bottom left: Player 1, then up the left side to Player 2, across to
+          // Player 3 at the top right, and down to Player 4 at the bottom right.
+          <View style={styles.panels}>
+            {/* Top row: Player 2 (left) and Player 3 (right). */}
+            {sidewaysRow(1, 2, 'compact')}
+            {/* Bottom row: Player 1 (left) and Player 4 (right). */}
+            {sidewaysRow(0, 3, 'compact')}
+          </View>
+        ) : players === 5 ? (
+          // THE 5-PLAYER LAYOUT: two rows of sideways panels on top, and Player 1 right way up
+          // across the whole bottom. Numbering goes clockwise from Player 1 at the bottom:
+          // up the left side (Players 2, 3), then down the right side (Players 4, 5).
+          <View style={styles.panels}>
+            {/* Top row: Player 3 (left) and Player 4 (right). */}
+            {sidewaysRow(2, 3, 'small')}
+            {/* Middle row: Player 2 (left) and Player 5 (right). */}
+            {sidewaysRow(1, 4, 'small')}
+            {/* The bottom: Player 1, full width and right way up. */}
+            {renderPanel(0)}
+          </View>
+        ) : players === 6 ? (
+          // THE 6-PLAYER LAYOUT: three rows of two sideways panels. Numbering goes clockwise from
+          // the bottom left: up the left side (Players 1, 2, 3), then down the right side (Players 4, 5, 6).
+          <View style={styles.panels}>
+            {/* Top row: Player 3 (left) and Player 4 (right). */}
+            {sidewaysRow(2, 3, 'small')}
+            {/* Middle row: Player 2 (left) and Player 5 (right). */}
+            {sidewaysRow(1, 4, 'small')}
+            {/* Bottom row: Player 1 (left) and Player 6 (right). */}
+            {sidewaysRow(0, 5, 'small')}
           </View>
         ) : (
           // The other player counts don't have a layout yet.
@@ -83,7 +179,7 @@ export function LifeScreen({
               "New game" resets everyone's life, and "Players" goes back to choosing how many
               players. ("Players" was added so you aren't stuck on this screen. Tell me if you
               want it elsewhere.) */}
-        <View style={styles.controls} pointerEvents="box-none">
+        <View style={[styles.controls, { top: controlsTop }]} pointerEvents="box-none">
           <Pressable
             onPress={newGame}
             accessibilityRole="button"
@@ -128,6 +224,13 @@ const styles = StyleSheet.create({
   // The two panels, one above the other with a gap between them. Each takes half the height.
   panels: {
     flex: 1,
+    gap: Spacing.three,
+  },
+  // A row of panels side by side with a gap between them. It takes the same height as the
+  // other half of the screen, and each panel slot in it takes half the width.
+  sideBySide: {
+    flex: 1,
+    flexDirection: 'row',
     gap: Spacing.three,
   },
   // The message shown for player counts that have no layout yet.
