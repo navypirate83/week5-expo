@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { GameProvider } from '@/context/game-context';
 import { SettingsProvider } from '@/context/settings-context';
 import { SymbolsProvider } from '@/context/symbols-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -19,7 +20,10 @@ function ThemedApp() {
       <AnimatedSplashOverlay />
       {/* SymbolsProvider loads the mana symbol pictures so any screen can show them. */}
       <SymbolsProvider>
-        <AppTabs />
+        {/* GameProvider keeps the current game and saves it, so it survives closing the app. */}
+        <GameProvider>
+          <AppTabs />
+        </GameProvider>
       </SymbolsProvider>
     </ThemeProvider>
   );

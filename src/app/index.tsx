@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,6 +6,7 @@ import { PlayerButtons } from '@/components/player-buttons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useGame } from '@/context/game-context';
 import { useSettings } from '@/context/settings-context';
 
 // The main screen (the d20 tab). It has two states:
@@ -18,19 +18,20 @@ export default function HomeScreen() {
   // is the life everyone begins with.
   const { settings } = useSettings();
 
-  // How many players were chosen. null means no game has been started yet.
-  const [players, setPlayers] = useState<number | null>(null);
+  // The current game. It is saved on the phone, so if the app was closed in the middle of a
+  // game, the game is here again when it reopens. players is null when there is no game.
+  const { game, startGame, leaveGame } = useGame();
 
-  // A game is running: show the life totals. "New game" sets players back to null.
-  if (players !== null) {
+  // A game is running: show the life totals. "Players" ends the game and comes back here.
+  if (game.players !== null) {
     return (
       <LifeScreen
-        // Changing the key makes a brand new screen (fresh life totals) for every new game.
-        key={players}
-        players={players}
+        // Changing the key makes a brand new screen when the number of players changes.
+        key={game.players}
+        players={game.players}
         startingLife={settings.startingLife}
         maxPoison={settings.maxPoison}
-        onExit={() => setPlayers(null)}
+        onExit={leaveGame}
       />
     );
   }
@@ -46,7 +47,10 @@ export default function HomeScreen() {
         </ThemedText>
 
         {/* The buttons fill all the space left under the heading. Tapping one starts a game. */}
-        <PlayerButtons maxPlayers={settings.maxPlayers} onSelect={setPlayers} />
+        <PlayerButtons
+          maxPlayers={settings.maxPlayers}
+          onSelect={(players) => startGame(players, settings.startingLife)}
+        />
       </SafeAreaView>
     </ThemedView>
   );

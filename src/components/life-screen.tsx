@@ -7,6 +7,7 @@ import { RotatedSlot } from '@/components/rotated-slot';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useGame } from '@/context/game-context';
 import { useTheme } from '@/hooks/use-theme';
 
 // The screen that shows everyone's life totals once the number of players is chosen.
@@ -39,34 +40,20 @@ export function LifeScreen({
 }) {
   const theme = useTheme();
 
-  // Everyone's life total, in a list: lives[0] is Player 1, lives[1] is Player 2...
-  // They all start at the Starting Life Total setting.
-  const [lives, setLives] = useState<number[]>(() => Array.from({ length: players }, () => startingLife));
-
-  // Everyone's poison counters, in the same order. Everyone starts with none.
-  const [poisons, setPoisons] = useState<number[]>(() => Array.from({ length: players }, () => 0));
+  // The current game's numbers come from the game context, which saves them on the phone
+  // every time they change: lives[0] is Player 1's life, lives[1] is Player 2's...,
+  // and poisons holds each player's poison counters in the same order.
+  const { game, adjustLife, adjustPoison, resetGame } = useGame();
+  const { lives, poisons } = game;
 
   // Which game this is (1, 2, 3...). It goes up each time "New game" is tapped.
   const [gameNumber, setGameNumber] = useState(1);
-
-  // Changes one player's life by +1 or -1. We copy the list and change only that player's number.
-  function adjustLife(playerIndex: number, change: number) {
-    setLives((current) => current.map((life, index) => (index === playerIndex ? life + change : life)));
-  }
-
-  // Changes one player's poison counters by +1 or -1. Same idea, but poison never goes below 0.
-  function adjustPoison(playerIndex: number, change: number) {
-    setPoisons((current) =>
-      current.map((poison, index) => (index === playerIndex ? Math.max(0, poison + change) : poison)),
-    );
-  }
 
   // Starts over: every player's life goes back to the Starting Life Total, poison counters go
   // back to 0, and we stay on this screen.
   // If you changed Starting Life Total in Settings during the game, the new value is used here.
   function newGame() {
-    setLives(Array.from({ length: players }, () => startingLife));
-    setPoisons(Array.from({ length: players }, () => 0));
+    resetGame(startingLife);
     // Counting up changes the panels' "key" below, which makes fresh panels. That also wipes
     // any change badge (like "+3") that was still showing from the old game.
     setGameNumber((current) => current + 1);
