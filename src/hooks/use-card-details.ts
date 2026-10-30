@@ -1,11 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
+import { CACHE_MAX_AGE_MS } from '@/constants/cache';
 import { fetchCard, fetchRulings, type CardData, type Ruling } from '@/services/scryfall';
 
 // This hook looks up everything we show for one card: its text, its picture addresses
 // and its rulings. Cards you have looked at before are saved on the phone, so their text
 // and rulings still show when you are offline.
+//
+// A saved card is used as-is for 7 days (see src/constants/cache.ts), with no internet
+// request at all. After that it is refreshed from Scryfall when online, and if the phone is
+// offline the old saved copy keeps being shown.
 
 // What the card view needs to know:
 //   idle     - no card chosen yet
@@ -14,7 +19,9 @@ import { fetchCard, fetchRulings, type CardData, type Ruling } from '@/services/
 //   error    - nothing to show; "error" says why
 type Status = 'idle' | 'loading' | 'ready' | 'error';
 
-type Saved = { card: CardData; rulings: Ruling[] };
+// What we keep on the phone for each card. "savedAt" is when we downloaded it, as a number
+// of milliseconds. Copies saved before this field existed don't have one, so they count as old.
+type Saved = { card: CardData; rulings: Ruling[]; savedAt?: number };
 
 // Saved cards live under a key like "card:The Ur-Dragon".
 const keyFor = (name: string) => `card:${name}`;
@@ -58,12 +65,15 @@ export function useCardDetails(name: string | null) {
         setStatus('loading');
       }
 
-      // Step 2: ask Scryfall for the latest and save it.
+      // If the saved copy is less than 7 days old, it is good enough: stop here, no download.
+      if (saved?.savedAt !== undefined && Date.now() - saved.savedAt < CACHE_MAX_AGE_MS) return;
+
+      // Step 2: the copy is missing or old, so ask Scryfall for the latest and save it.
       try {
         const { card, rulingsUrl } = await fetchCard(name);
         const rulings = await fetchRulings(rulingsUrl);
         if (cancelled) return;
-        const fresh = { card, rulings };
+        const fresh: Saved = { card, rulings, savedAt: Date.now() };
         setData(fresh);
         setStatus('ready');
         setFromSaved(false);

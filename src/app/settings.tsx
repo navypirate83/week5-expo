@@ -11,7 +11,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHaptics } from '@/hooks/use-haptics';
-import { MAX_PLAYER_OPTIONS, useSettings, type ThemeChoice } from '@/context/settings-context';
+import {
+  MAX_PLAYER_OPTIONS,
+  MAX_POISON_OPTIONS,
+  STARTING_LIFE_OPTIONS,
+  useSettings,
+  type ThemeChoice,
+} from '@/context/settings-context';
 
 // The choices shown in the Theme setting, in the order they appear on screen.
 const THEME_OPTIONS: { label: string; value: ThemeChoice }[] = [
@@ -67,6 +73,26 @@ export default function SettingsScreen() {
                 options={MAX_PLAYER_OPTIONS}
                 value={settings.maxPlayers}
                 onChange={(next) => updateSetting('maxPlayers', next)}
+              />
+            </SettingRow>
+
+            {/* Starting Life Total: a dropdown with 20 to 60 in steps of 5. */}
+            <SettingRow label="Starting Life Total">
+              <Dropdown
+                label="Starting Life Total"
+                options={STARTING_LIFE_OPTIONS}
+                value={settings.startingLife}
+                onChange={(next) => updateSetting('startingLife', next)}
+              />
+            </SettingRow>
+
+            {/* Max Poison Counters: a dropdown with 10 or 20. */}
+            <SettingRow label="Max Poison Counters">
+              <Dropdown
+                label="Max Poison Counters"
+                options={MAX_POISON_OPTIONS}
+                value={settings.maxPoison}
+                onChange={(next) => updateSetting('maxPoison', next)}
               />
             </SettingRow>
           </ThemedView>

@@ -1,5 +1,5 @@
 import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, useWindowDimensions, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -112,6 +112,7 @@ export function Dropdown<Value extends string | number>({
   const buttonRef = useRef<ComponentRef<typeof Pressable>>(null);
   const { tick } = useHaptics();
   const theme = useTheme();
+  const { height: screenHeight } = useWindowDimensions();
   const open = anchor !== null;
 
   // Measures where the button is, which also opens the list.
@@ -162,27 +163,35 @@ export function Dropdown<Value extends string | number>({
                 left: anchor.x,
                 top: anchor.y + anchor.height + Spacing.one,
                 width: anchor.width,
+                // Never taller than the space between the button and the bottom of the screen.
+                // A long list (like the 9 starting life totals) scrolls inside this height.
+                maxHeight: Math.max(
+                  120,
+                  screenHeight - (anchor.y + anchor.height + Spacing.one) - Spacing.three,
+                ),
                 backgroundColor: theme.background,
                 borderColor: theme.backgroundSelected,
               },
             ]}>
-            {options.map((option) => (
-              <Pressable
-                key={option}
-                onPress={() => {
-                  tick();
-                  onChange(option);
-                  setAnchor(null);
-                }}
-                accessibilityRole="menuitem"
-                // The currently chosen item gets a highlight so you can see which one is picked.
-                style={[
-                  styles.dropdownItem,
-                  option === value && { backgroundColor: theme.backgroundSelected },
-                ]}>
-                <ThemedText type={option === value ? 'smallBold' : 'small'}>{option}</ThemedText>
-              </Pressable>
-            ))}
+            <ScrollView>
+              {options.map((option) => (
+                <Pressable
+                  key={option}
+                  onPress={() => {
+                    tick();
+                    onChange(option);
+                    setAnchor(null);
+                  }}
+                  accessibilityRole="menuitem"
+                  // The currently chosen item gets a highlight so you can see which one is picked.
+                  style={[
+                    styles.dropdownItem,
+                    option === value && { backgroundColor: theme.backgroundSelected },
+                  ]}>
+                  <ThemedText type={option === value ? 'smallBold' : 'small'}>{option}</ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         )}
       </Modal>

@@ -9,11 +9,21 @@ export type ThemeChoice = 'light' | 'system' | 'dark';
 export const MAX_PLAYER_OPTIONS = [2, 3, 4, 5, 6] as const;
 export type MaxPlayers = (typeof MAX_PLAYER_OPTIONS)[number];
 
+// The life totals the Starting Life Total dropdown offers: 20 to 60 in steps of 5.
+export const STARTING_LIFE_OPTIONS = [20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
+export type StartingLife = (typeof STARTING_LIFE_OPTIONS)[number];
+
+// The poison counter limits the Max Poison Counters dropdown offers.
+export const MAX_POISON_OPTIONS = [10, 20] as const;
+export type MaxPoison = (typeof MAX_POISON_OPTIONS)[number];
+
 // Everything the settings page controls, bundled together in one object.
 type Settings = {
   hapticFeedback: boolean; // true = on, false = off
   theme: ThemeChoice;
   maxPlayers: MaxPlayers;
+  startingLife: StartingLife; // the life each player starts with
+  maxPoison: MaxPoison; // how many poison counters knock a player out
 };
 
 // What other files get when they ask for the settings: the current values,
@@ -29,6 +39,8 @@ const DEFAULT_SETTINGS: Settings = {
   hapticFeedback: true,
   theme: 'system',
   maxPlayers: 4,
+  startingLife: 20,
+  maxPoison: 10,
 };
 
 // The name of the "drawer" on the phone where we keep the saved settings.
@@ -47,6 +59,10 @@ function readSavedSettings(saved: unknown): Settings {
         ? data.theme
         : DEFAULT_SETTINGS.theme,
     maxPlayers: MAX_PLAYER_OPTIONS.find((option) => option === data.maxPlayers) ?? DEFAULT_SETTINGS.maxPlayers,
+    // Settings saved before these two existed have no value for them, so they get the defaults.
+    startingLife:
+      STARTING_LIFE_OPTIONS.find((option) => option === data.startingLife) ?? DEFAULT_SETTINGS.startingLife,
+    maxPoison: MAX_POISON_OPTIONS.find((option) => option === data.maxPoison) ?? DEFAULT_SETTINGS.maxPoison,
   };
 }
 

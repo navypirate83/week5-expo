@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { CACHE_MAX_AGE_MS } from '@/constants/cache';
 import { fetchSymbology, type CardSymbol } from '@/services/scryfall';
 
 // This file keeps Scryfall's table of mana and game symbols (the little pictures for
@@ -8,11 +9,11 @@ import { fetchSymbology, type CardSymbol } from '@/services/scryfall';
 //
 // Like the card name list, the table is saved on the phone so it is there offline.
 // It is loaded from the phone first, then downloaded again in the background if it
-// is missing or more than a week old. Symbols almost never change, so a week is plenty.
+// is missing or more than 7 days old (see src/constants/cache.ts).
 
 const SYMBOLS_KEY = 'mana-symbols';
 const CHECKED_KEY = 'mana-symbols-checked';
-const RECHECK_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const RECHECK_AFTER_MS = CACHE_MAX_AGE_MS; // 7 days
 
 // The lookup table: "{W}" -> its picture address and description.
 type SymbolTable = Record<string, CardSymbol>;

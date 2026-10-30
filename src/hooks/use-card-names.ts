@@ -1,19 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 
+import { CACHE_MAX_AGE_MS } from '@/constants/cache';
 import { fetchCardNames } from '@/services/scryfall';
 
 // This hook keeps the list of every card name on the phone, so searching works with no
 // internet. How it behaves:
 //   1. On start it loads the saved list from the phone right away (works offline).
-//   2. If the saved list is more than a few hours old (or missing), and the phone is online,
+//   2. If the saved list is more than 7 days old (or missing), and the phone is online,
 //      it downloads Scryfall's list again in the background.
 //   3. If the new list is different, it replaces the saved one. If not, nothing changes.
 //   4. If there is no internet, it quietly keeps using what is saved.
 
 const NAMES_KEY = 'card-names'; // the saved list itself
 const CHECKED_KEY = 'card-names-checked'; // when we last asked Scryfall, as a number
-const RECHECK_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
+const RECHECK_AFTER_MS = CACHE_MAX_AGE_MS; // 7 days
 
 // What the screen needs to know about the list:
 //   loading  - still reading what is saved on the phone
@@ -28,7 +29,7 @@ export function useCardNames() {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Downloads the list and saves it if it changed. "force" skips the 6-hour wait.
+  // Downloads the list and saves it if it changed. "force" skips the 7-day wait.
   const refresh = useCallback(async (saved: string[], force: boolean) => {
     const checkedText = await AsyncStorage.getItem(CHECKED_KEY).catch(() => null);
     const checkedAt = checkedText ? Number(checkedText) : 0;
