@@ -10,9 +10,10 @@ import { Platform } from 'react-native';
 export const Colors = {
   light: {
     text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
+    // Off-white (a soft, slightly warm cream) instead of pure white, easier on the eyes.
+    background: '#F5F3EE',
+    backgroundElement: '#EAE7E0',
+    backgroundSelected: '#DDD9D0',
     textSecondary: '#60646C',
   },
   dark: {
