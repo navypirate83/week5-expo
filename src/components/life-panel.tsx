@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
 import { RichText } from '@/components/rich-text';
 import { ThemedText } from '@/components/themed-text';
@@ -38,6 +38,27 @@ const COUNTER_SYMBOL_SIZE = COUNTER_FONT_SIZE - 4;
 // How long the change badge stays on screen after the last tap, in milliseconds (5 seconds).
 const BADGE_SHOW_MS = 5000;
 
+// How far a finger must slide, in pixels, to change the big number by 1 while dragging.
+const DRAG_STEP_PX = 24;
+
+// How far a finger must slide sideways, in pixels, to count as a swipe (to open or close
+// commander damage).
+const SWIPE_MIN_PX = 40;
+
+// When another player has opened commander damage, THIS panel shows how much damage this
+// player's commander has dealt to them. This is everything the panel needs to know for that:
+//   viewer   - the number of the player who opened commander damage (the one taking the damage)
+//   facing   - how far that player's panel is turned on the screen (0, 90, 180 or 270 degrees).
+//              The number is turned to face them, and dragging "down" means down for them.
+//   damage   - how much damage this player has dealt to the viewer
+//   onAdjust - called with +1 or -1 to change that damage
+export type CommanderView = {
+  viewer: number;
+  facing: number;
+  damage: number;
+  onAdjust: (change: number) => void;
+};
+
 // Turns the running total into the text shown in the badge: 3 becomes "+3", -3 becomes "−3",
 // and 0 stays "0" (for example after tapping + once and then - once).
 function formatChange(change: number): string {
@@ -61,6 +82,17 @@ function formatChange(change: number): string {
 //   onAdjustLife   - called with +1 or -1 when a button is tapped while life is the big number
 //   onAdjustPoison - called with +1 or -1 when a button is tapped while poison is the big number
 //   upsideDown     - turns the whole panel 180 degrees, for the player sitting across the table
+//   rotation       - how far the panel is turned on the screen (0, 90, 180 or 270 degrees). The
+//                    panel doesn't turn itself this way (the layout does that), it only needs to
+//                    know so that sliding a finger "down" means down for the player reading it
+//   mostCommanderDamage - the most commander damage this player has taken from any ONE
+//                    player. At 21 or more they are defeated.
+//   commanderView  - set while ANOTHER player has commander damage open: this panel then shows
+//                    the damage it has dealt to that player (see CommanderView above)
+//   onSwipe        - called when a finger swipes sideways on the panel, with the direction as
+//                    seen by the person reading this panel
+//   showCommanderHint - true while this player has commander damage open: shows a reminder of
+//                    how to close it
 //   size           - how big the buttons and numbers are, for panels with less room:
 //                    'normal' (the full size), 'compact' (the side-by-side panels of the 3 and
 //                    4 player layouts) or 'small' (the shortest panels, in the 5 and 6 player layouts)
@@ -72,6 +104,11 @@ export function LifePanel({
   onAdjustLife,
   onAdjustPoison,
   upsideDown = false,
+  rotation = 0,
+  mostCommanderDamage = 0,
+  commanderView,
+  onSwipe,
+  showCommanderHint = false,
   size = 'normal',
   playerNumber,
 }: {
@@ -81,19 +118,36 @@ export function LifePanel({
   onAdjustLife: (change: number) => void;
   onAdjustPoison: (change: number) => void;
   upsideDown?: boolean;
+  rotation?: 0 | 90 | 180 | 270;
+  mostCommanderDamage?: number;
+  commanderView?: CommanderView;
+  onSwipe?: (direction: 'left' | 'right') => void;
+  showCommanderHint?: boolean;
   size?: PanelSize;
   playerNumber: number;
 }) {
   const theme = useTheme();
   const { tick } = useHaptics();
-  // True when this player has lost: life at 0 or below, or poison at the maximum or more.
-  const defeated = isDefeated(life, poison, maxPoison);
+  // True when this player has lost: life at 0 or below, poison at the maximum or more, or 21
+  // commander damage from one player.
+  const defeated = isDefeated(life, poison, maxPoison, mostCommanderDamage);
 
   // Which number is the big one right now: false = life (normal), true = poison counters.
   const [showingPoison, setShowingPoison] = useState(false);
-  // The number in the big spot, and its name for the buttons' screen reader labels.
-  const bigNumber = showingPoison ? poison : life;
-  const counterName = showingPoison ? 'poison counters' : 'life';
+  // The number in the big spot, and its name for the buttons' screen reader labels. While
+  // another player has commander damage open, the big number is the damage this player dealt them.
+  const bigNumber = commanderView ? commanderView.damage : showingPoison ? poison : life;
+  const counterName = commanderView
+    ? `commander damage to Player ${commanderView.viewer}`
+    : showingPoison
+      ? 'poison counters'
+      : 'life';
+
+  // How this panel is turned on the screen, in degrees.
+  const ownDegrees = upsideDown ? 180 : rotation;
+  // How far the big number must be turned so it faces the player who opened commander damage
+  // (0 when this panel already faces them, or when commander damage isn't open).
+  const numberDegrees = commanderView ? (commanderView.facing - ownDegrees + 360) % 360 : 0;
 
   // The running total of the recent + and - taps, shown in a small badge beside the life total.
   // null means "no recent taps", so no badge is showing.
@@ -101,6 +155,16 @@ export function LifePanel({
   // The 5-second countdown that hides the badge. We keep it in a "ref" (a box that holds a
   // value without redrawing the screen when it changes) so we can cancel and restart it.
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // When commander damage opens or closes, the change badge (like "+3") belongs to the other
+  // number, so it is cleared. (React allows changing state while drawing, like this, when
+  // it's done to react to a change.)
+  const inCommander = commanderView !== undefined;
+  const [wasInCommander, setWasInCommander] = useState(inCommander);
+  if (inCommander !== wasInCommander) {
+    setWasInCommander(inCommander);
+    setRecentChange(null);
+  }
 
   // If this panel goes away while the countdown is running, cancel it.
   useEffect(() => {
@@ -118,15 +182,23 @@ export function LifePanel({
     setRecentChange(null);
   }
 
-  // Called for every tap of + (change = 1) or - (change = -1).
+  // Called for every tap of + (change = 1) or - (change = -1), and for every step of a drag.
   function handleTap(change: number) {
-    // Poison counters can't go below 0, so a - tap at 0 does nothing at all.
-    if (showingPoison && poison + change < 0) return;
-    // 0. A light tick you can feel, on every tap. (It stays silent if Haptic Feedback is off in Settings.)
-    tick();
-    // 1. Change the number that is currently big: poison counters or life.
-    if (showingPoison) onAdjustPoison(change);
-    else onAdjustLife(change);
+    // While another player has commander damage open, + and - change the damage this player
+    // has dealt to them (it can't go below 0). The life change is handled for us.
+    if (commanderView) {
+      if (commanderView.damage + change < 0) return;
+      tick();
+      commanderView.onAdjust(change);
+    } else {
+      // Poison counters can't go below 0, so a - tap at 0 does nothing at all.
+      if (showingPoison && poison + change < 0) return;
+      // 0. A light tick you can feel, on every tap. (It stays silent if Haptic Feedback is off in Settings.)
+      tick();
+      // 1. Change the number that is currently big: poison counters or life.
+      if (showingPoison) onAdjustPoison(change);
+      else onAdjustLife(change);
+    }
     // 2. Add this tap to the running total: -1, -1, +1 becomes -1. The badge updates right away.
     setRecentChange((current) => (current ?? 0) + change);
     // 3. Restart the countdown. The badge disappears after 5 seconds with no taps, and the
@@ -135,12 +207,86 @@ export function LifePanel({
     hideTimer.current = setTimeout(() => setRecentChange(null), BADGE_SHOW_MS);
   }
 
+  // ---- DRAGGING A FINGER ON THE PANEL ----
+  // Which way the finger moves MOST decides what the drag does:
+  //   - mostly up or down: change the big number. It goes down by 1 for every DRAG_STEP_PX
+  //     pixels of sliding down, and up for sliding up. Sliding back the other way undoes the steps.
+  //   - mostly sideways: a swipe. Swiping left opens commander damage, and swiping right closes it
+  //     (the screen decides which, see life-screen.tsx).
+
+  // The "latest" handleTap and onSwipe. The finger-tracking code below is only rebuilt when the
+  // panel's turn changes, so it would keep using old copies (with an old life total). Updating
+  // these boxes on every redraw lets it always call the newest copies.
+  const latestTap = useRef(handleTap);
+  const latestSwipe = useRef(onSwipe);
+  useEffect(() => {
+    latestTap.current = handleTap;
+    latestSwipe.current = onSwipe;
+  });
+  // How many steps this drag has already turned into changes (down is negative).
+  const stepsApplied = useRef(0);
+  // Which way the current drag is going: not decided yet, up/down, or sideways.
+  const dragKind = useRef<'undecided' | 'vertical' | 'sideways'>('undecided');
+  // How far the finger has gone sideways (negative = left), as the reader of the panel sees it.
+  const sidewaysPx = useRef(0);
+  // How the panel is turned, so "down" and "left" mean down and left for the person reading it.
+  // While another player has commander damage open, that player is the one changing this
+  // number, so it is THEIR down that counts.
+  const turn = ((commanderView ? commanderView.facing : ownDegrees) * Math.PI) / 180;
+
+  // (useMemo builds it once, and again only if the panel's turn changes.)
+  const dragResponder = useMemo(
+    // The finger-tracking functions below only touch the refs while a finger is moving (never
+    // while the screen is being drawn), which is safe. The linter can't tell, so we silence it.
+    () =>
+      // eslint-disable-next-line react-hooks/refs
+      PanResponder.create({
+        // Only take over once the finger has really moved, so a plain tap is left alone.
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) + Math.abs(gesture.dy) > 6,
+        // A new drag starts counting from zero.
+        onPanResponderGrant: () => {
+          stepsApplied.current = 0;
+          dragKind.current = 'undecided';
+          sidewaysPx.current = 0;
+        },
+        onPanResponderMove: (_event, gesture) => {
+          // The finger's movement is measured on the screen. Convert it to the panel's own
+          // directions (they differ when the panel is turned).
+          const down = -gesture.dx * Math.sin(turn) + gesture.dy * Math.cos(turn);
+          const across = gesture.dx * Math.cos(turn) + gesture.dy * Math.sin(turn);
+          sidewaysPx.current = across;
+          // After a little movement, decide once whether this drag is up/down or sideways.
+          if (dragKind.current === 'undecided') {
+            if (Math.abs(down) + Math.abs(across) < 12) return;
+            dragKind.current = Math.abs(across) > Math.abs(down) ? 'sideways' : 'vertical';
+          }
+          if (dragKind.current !== 'vertical') return;
+          // Whole steps so far; sliding down gives a negative number (the number goes down).
+          const steps = -Math.trunc(down / DRAG_STEP_PX);
+          // Apply only the steps we haven't applied yet, one at a time, so every step ticks.
+          while (stepsApplied.current !== steps) {
+            const change = steps > stepsApplied.current ? 1 : -1;
+            stepsApplied.current += change;
+            latestTap.current(change);
+          }
+        },
+        // When the finger lifts after a long enough sideways swipe, report which way it went.
+        onPanResponderRelease: () => {          if (dragKind.current !== 'sideways' || Math.abs(sidewaysPx.current) < SWIPE_MIN_PX) return;
+          latestSwipe.current?.(sidewaysPx.current < 0 ? 'left' : 'right');
+        },
+      }),
+    [turn],
+  );
+
   return (
     // The panel's rounded box. Turning it 180 degrees flips EVERYTHING inside it, so the
     // buttons stay on that player's left and the numbers read the right way up for them.
     <ThemedView
       type="backgroundElement"
       accessibilityLabel={defeated ? `Player ${playerNumber} is defeated` : undefined}
+      // The "panHandlers" make the WHOLE panel follow a finger dragging up or down, not just the
+      // number. (Taps on the buttons and the corner still work as before.)
+      {...dragResponder.panHandlers}
       style={[
         styles.panel,
         size === 'compact' && styles.compactPanel,
@@ -154,7 +300,7 @@ export function LifePanel({
         <Pressable
           onPress={() => handleTap(1)}
           accessibilityRole="button"
-          accessibilityLabel={`Player ${playerNumber}: add 1 ${showingPoison ? 'poison counter' : 'life'}`}
+          accessibilityLabel={`Player ${playerNumber}: add 1 ${commanderView ? 'commander damage' : showingPoison ? 'poison counter' : 'life'}`}
           style={({ pressed }) => [
             styles.adjustButton,
             size === 'compact' && styles.compactAdjustButton,
@@ -167,7 +313,7 @@ export function LifePanel({
         <Pressable
           onPress={() => handleTap(-1)}
           accessibilityRole="button"
-          accessibilityLabel={`Player ${playerNumber}: ${showingPoison ? 'remove 1 poison counter' : 'lose 1 life'}`}
+          accessibilityLabel={`Player ${playerNumber}: ${commanderView ? 'remove 1 commander damage' : showingPoison ? 'remove 1 poison counter' : 'lose 1 life'}`}
           style={({ pressed }) => [
             styles.adjustButton,
             size === 'compact' && styles.compactAdjustButton,
@@ -179,19 +325,30 @@ export function LifePanel({
         </Pressable>
       </View>
 
-      {/* MIDDLE: the big number (life or poison counters), as large as will fit. */}
+      {/* MIDDLE: the big number (life or poison counters), as large as will fit. While another
+          player has commander damage open, it is the damage this player dealt them, and the
+          number (with a small caption saying what it is) is turned to face that player. */}
       <View style={styles.lifeArea}>
-        <ThemedText
-          accessibilityLabel={`Player ${playerNumber} ${counterName}: ${bigNumber}`}
-          style={[
-            styles.life,
-            size === 'compact' && styles.compactLife,
-            size === 'small' && styles.smallLife,
-          ]}
-          adjustsFontSizeToFit
-          numberOfLines={1}>
-          {bigNumber}
-        </ThemedText>
+        <View style={[styles.numberBox, { transform: [{ rotate: `${numberDegrees}deg` }] }]}>
+          {commanderView && (
+            <ThemedText type="smallBold" themeColor="textSecondary" selectable={false} style={styles.caption}>
+              Commander damage to Player {commanderView.viewer}
+            </ThemedText>
+          )}
+          <ThemedText
+            accessibilityLabel={`Player ${playerNumber} ${counterName}: ${bigNumber}`}
+            style={[
+              styles.life,
+              size === 'compact' && styles.compactLife,
+              size === 'small' && styles.smallLife,
+            ]}
+            adjustsFontSizeToFit
+            // Stops a mouse drag on the web from highlighting the number as if it were text.
+            selectable={false}
+            numberOfLines={1}>
+            {bigNumber}
+          </ThemedText>
+        </View>
 
         {/* THE CHANGE BADGE: just to the left of the life total and centered up and down.
             It only exists while there is a recent change to show. "pointerEvents none" means
@@ -210,9 +367,19 @@ export function LifePanel({
         )}
       </View>
 
+      {/* A reminder, shown only while THIS player has commander damage open. */}
+      {showCommanderHint && (
+        <ThemedText type="small" themeColor="textSecondary" selectable={false} style={styles.hint}>
+          Swipe right to exit
+        </ThemedText>
+      )}
+
       {/* LOWER RIGHT: the small number. Tapping it swaps it with the big number.
             Normally it shows the {H} symbol (from Scryfall) and the poison counters. While
-            the poison counters are big, it shows the life total instead. */}
+            the poison counters are big, it shows the life total instead. It is hidden while
+            another player has commander damage open, because then the big number isn't
+            life or poison at all. */}
+      {!commanderView && (
       <Pressable
         onPress={swapNumbers}
         hitSlop={12}
@@ -232,6 +399,7 @@ export function LifePanel({
           </>
         )}
       </Pressable>
+      )}
     </ThemedView>
   );
 }
@@ -240,6 +408,9 @@ const styles = StyleSheet.create({
   // The rounded box. "flex: 1" makes it share the space equally with the other panel.
   // Buttons on the left, life total taking the rest of the width.
   panel: {
+    // On the web, dragging a mouse would start highlighting text and cancel our drag, so
+    // the panel can't be highlighted. (Phones don't do this.)
+    userSelect: 'none',
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -347,6 +518,23 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
     fontWeight: '700',
+  },
+  // The big number and (in commander damage) its caption, stacked and centered. It is turned
+  // as a unit to face the player who opened commander damage.
+  numberBox: {
+    alignItems: 'center',
+  },
+  // The small caption above a commander damage number.
+  caption: {
+    textAlign: 'center',
+  },
+  // The "Swipe right to exit" reminder, along the bottom edge of the panel.
+  hint: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: Spacing.two,
+    textAlign: 'center',
   },
   // The life total itself: very large.
   life: {

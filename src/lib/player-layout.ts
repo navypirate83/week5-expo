@@ -30,5 +30,29 @@ export function playerRows(maxPlayers: number): number[] {
   }
 }
 
+// How far each player's panel is turned on the screen, in degrees, matching the layouts in
+// life-screen.tsx. Entry 0 is Player 1, entry 1 is Player 2, and so on.
+//   0   = right way up (facing the person holding the phone)
+//   180 = upside down (facing the person across the table)
+//   90  = turned so its top points right (for a player at the phone's left edge)
+//   270 = turned so its top points left (for a player at the phone's right edge)
+// Commander damage uses this to turn numbers so they face the player who is looking at them.
+export function playerRotations(players: number): number[] {
+  switch (players) {
+    case 2:
+      return [0, 180];
+    case 3:
+      return [0, 90, 270];
+    case 4:
+      return [90, 90, 270, 270];
+    case 5:
+      return [0, 90, 90, 270, 270];
+    case 6:
+      return [90, 90, 90, 270, 270, 270];
+    default:
+      return Array.from({ length: players }, () => 0);
+  }
+}
+
 // The number shown on the first button. Buttons count up from here: 2, 3, 4...
 export const FIRST_PLAYER_NUMBER = 2;

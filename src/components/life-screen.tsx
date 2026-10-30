@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useGame } from '@/context/game-context';
 import { useTheme } from '@/hooks/use-theme';
+import { playerRotations } from '@/lib/player-layout';
 
 // The screen that shows everyone's life totals once the number of players is chosen.
 // Each player count gets its own layout:
@@ -43,8 +44,16 @@ export function LifeScreen({
   // The current game's numbers come from the game context, which saves them on the phone
   // every time they change: lives[0] is Player 1's life, lives[1] is Player 2's...,
   // and poisons holds each player's poison counters in the same order.
-  const { game, adjustLife, adjustPoison, resetGame } = useGame();
-  const { lives, poisons } = game;
+  const { game, adjustLife, adjustPoison, adjustCommander, resetGame } = useGame();
+  const { lives, poisons, commander } = game;
+
+  // How each player's panel is turned on the screen (0, 90, 180 or 270 degrees).
+  const rotations = playerRotations(players);
+
+  // Which player has commander damage open: 0 is Player 1, 1 is Player 2..., or null when
+  // nobody does. A player opens it by swiping left on their panel and closes it by swiping right.
+  // While it is open, every OTHER panel shows the damage its player has dealt to this player.
+  const [commanderViewer, setCommanderViewer] = useState<number | null>(null);
 
   // Which game this is (1, 2, 3...). It goes up each time "New game" is tapped.
   const [gameNumber, setGameNumber] = useState(1);
@@ -54,6 +63,8 @@ export function LifeScreen({
   // If you changed Starting Life Total in Settings during the game, the new value is used here.
   function newGame() {
     resetGame(startingLife);
+    // Close commander damage if someone had it open. (The damage itself is reset to 0 above.)
+    setCommanderViewer(null);
     // Counting up changes the panels' "key" below, which makes fresh panels. That also wipes
     // any change badge (like "+3") that was still showing from the old game.
     setGameNumber((current) => current + 1);
@@ -62,7 +73,10 @@ export function LifeScreen({
   // Builds the panel for one player. "index" is 0 for Player 1, 1 for Player 2, and so on.
   // Every layout below uses this, so a panel works the same way wherever it is placed.
   // "options" says how this panel is turned or sized in the layout.
-  function renderPanel(index: number, options: { upsideDown?: boolean; size?: PanelSize } = {}) {
+  function renderPanel(
+    index: number,
+    options: { upsideDown?: boolean; rotation?: 90 | 270; size?: PanelSize } = {},
+  ) {
     return (
       <LifePanel
         // The key includes the game number, so "New game" makes brand new panels.
@@ -73,7 +87,30 @@ export function LifeScreen({
         maxPoison={maxPoison}
         onAdjustLife={(change) => adjustLife(index, change)}
         onAdjustPoison={(change) => adjustPoison(index, change)}
+        // The most commander damage this player has taken from any ONE other player: 21 defeats them.
+        mostCommanderDamage={Math.max(...commander[index])}
+        // While another player has commander damage open, this panel shows (and changes) the
+        // damage it has dealt to them, turned to face them.
+        commanderView={
+          commanderViewer !== null && commanderViewer !== index
+            ? {
+                viewer: commanderViewer + 1,
+                facing: rotations[commanderViewer],
+                damage: commander[commanderViewer][index],
+                onAdjust: (change) => adjustCommander(commanderViewer, index, change),
+              }
+            : undefined
+        }
+        // A swipe left opens commander damage for this player; a swipe right closes it. The
+        // other players' panels ignore swipes while someone has it open.
+        onSwipe={
+          commanderViewer === null || commanderViewer === index
+            ? (direction) => setCommanderViewer(direction === 'left' ? index : null)
+            : undefined
+        }
+        showCommanderHint={commanderViewer === index}
         upsideDown={options.upsideDown}
+        rotation={options.rotation}
         size={options.size}
       />
     );
@@ -88,8 +125,8 @@ export function LifeScreen({
   function sidewaysRow(leftIndex: number, rightIndex: number, size: PanelSize) {
     return (
       <View style={styles.sideBySide}>
-        <RotatedSlot degrees={90}>{renderPanel(leftIndex, { size })}</RotatedSlot>
-        <RotatedSlot degrees={270}>{renderPanel(rightIndex, { size })}</RotatedSlot>
+        <RotatedSlot degrees={90}>{renderPanel(leftIndex, { size, rotation: 90 })}</RotatedSlot>
+        <RotatedSlot degrees={270}>{renderPanel(rightIndex, { size, rotation: 270 })}</RotatedSlot>
       </View>
     );
   }
