@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { SettingsProvider } from '@/context/settings-context';
+import { SymbolsProvider } from '@/context/symbols-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 SplashScreen.preventAutoHideAsync();
@@ -16,7 +17,10 @@ function ThemedApp() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <AppTabs />
+      {/* SymbolsProvider loads the mana symbol pictures so any screen can show them. */}
+      <SymbolsProvider>
+        <AppTabs />
+      </SymbolsProvider>
     </ThemeProvider>
   );
 }

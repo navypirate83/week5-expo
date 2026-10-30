@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { Modal, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -91,8 +91,8 @@ export function SegmentedControl<Value extends string>({
   );
 }
 
-// DROPDOWN: shows the current choice. Tapping it opens a list underneath;
-// tapping an item picks it and closes the list.
+// DROPDOWN: shows the current choice. Tapping it opens a list that floats over the page
+// right under the button; tapping an item picks it, and tapping anywhere else closes it.
 export function Dropdown<Value extends string | number>({
   options,
   value,
@@ -104,19 +104,28 @@ export function Dropdown<Value extends string | number>({
   onChange: (next: Value) => void;
   label: string;
 }) {
-  // "open" remembers whether the list is showing right now.
-  const [open, setOpen] = useState(false);
+  // Where the button is on the screen (x, y, width, height), measured when it is tapped.
+  // The list opens exactly under it. null means the list is closed.
+  const [anchor, setAnchor] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
+  const buttonRef = useRef<ComponentRef<typeof Pressable>>(null);
   const { tick } = useHaptics();
+  const theme = useTheme();
+  const open = anchor !== null;
+
+  // Measures where the button is, which also opens the list.
+  function openList() {
+    tick();
+    buttonRef.current?.measureInWindow((x, y, width, height) => setAnchor({ x, y, width, height }));
+  }
 
   return (
     <View style={styles.dropdown}>
-      {/* The button you tap to open or close the list. */}
+      {/* The button you tap to open the list. It shows the current choice. */}
       <Pressable
-        // A light tick, then open or close the list.
-        onPress={() => {
-          tick();
-          setOpen((current) => !current);
-        }}
+        ref={buttonRef}
+        onPress={openList}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ expanded: open }}>
@@ -129,25 +138,54 @@ export function Dropdown<Value extends string | number>({
         </ThemedView>
       </Pressable>
 
-      {/* The list of choices. It only exists while "open" is true. */}
-      {open && (
-        <ThemedView type="backgroundSelected" style={styles.dropdownList}>
-          {options.map((option) => (
-            <Pressable
-              key={option}
-              onPress={() => {
-                tick();
-                onChange(option);
-                setOpen(false);
-              }}
-              accessibilityRole="menuitem"
-              style={styles.dropdownItem}>
-              {/* The currently chosen item is bold so you can see which one is picked. */}
-              <ThemedText type={option === value ? 'smallBold' : 'small'}>{option}</ThemedText>
-            </Pressable>
-          ))}
-        </ThemedView>
-      )}
+      {/* The floating list. A Modal is a layer drawn above the whole screen, so the list
+          can cover anything underneath it. "transparent" lets the page show through. */}
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setAnchor(null)}>
+        {/* An invisible layer over the whole screen. Tapping it closes the list,
+            the way tapping outside a real dropdown does. */}
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => setAnchor(null)}
+          accessibilityLabel="Close list"
+        />
+        {anchor && (
+          // The list itself, placed just under the button and as wide as the button.
+          <View
+            style={[
+              styles.dropdownList,
+              {
+                left: anchor.x,
+                top: anchor.y + anchor.height + Spacing.one,
+                width: anchor.width,
+                backgroundColor: theme.background,
+                borderColor: theme.backgroundSelected,
+              },
+            ]}>
+            {options.map((option) => (
+              <Pressable
+                key={option}
+                onPress={() => {
+                  tick();
+                  onChange(option);
+                  setAnchor(null);
+                }}
+                accessibilityRole="menuitem"
+                // The currently chosen item gets a highlight so you can see which one is picked.
+                style={[
+                  styles.dropdownItem,
+                  option === value && { backgroundColor: theme.backgroundSelected },
+                ]}>
+                <ThemedText type={option === value ? 'smallBold' : 'small'}>{option}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </Modal>
     </View>
   );
 }
@@ -199,12 +237,20 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     minWidth: 88,
   },
-  // The list that appears under the button.
+  // The floating list. "absolute" means we place it at exact screen coordinates (under the
+  // button) instead of letting the page layout decide, so it can cover whatever is below.
+  // The outline and shadow make it look lifted off the page.
   dropdownList: {
-    marginTop: Spacing.one,
+    position: 'absolute',
     borderRadius: Spacing.two,
-    minWidth: 88,
+    borderWidth: 1,
     overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    // The Android version of the shadow.
+    elevation: 12,
   },
   // One choice in the list.
   dropdownItem: {

@@ -5,6 +5,7 @@ import { Colors } from '@/constants/theme';
 // We use the app's own light/dark helper (not React Native's) so the tab bar always
 // agrees with the rest of the app, including when the page loads in a web browser.
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useHaptics } from '@/hooks/use-haptics';
 
 // This is the bar of three icons along the bottom of the screen.
 // It is one file used on phones AND in the web browser, so what you see is the same.
@@ -16,9 +17,13 @@ export default function AppTabs() {
   // Find out whether the phone is in light or dark mode, then pick matching colors.
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  // press() is the firmer buzz we give each time a bottom button is tapped.
+  const { press } = useHaptics();
 
   return (
     <Tabs
+      // "tabPress" fires whenever any of the three bottom buttons is tapped.
+      screenListeners={{ tabPress: () => press() }}
       screenOptions={{
         // We draw our own header-less screens, so hide the default title bar at the top.
         headerShown: false,

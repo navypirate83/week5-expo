@@ -8,6 +8,7 @@ import { useSettings } from '@/context/settings-context';
 //   const { tick } = useHaptics();
 //   tick();      // buzzes only if Haptic Feedback is on
 //   tick(true);  // buzzes no matter what (used when the switch itself is turned on)
+//   press();     // a firmer buzz for the bottom page buttons
 export function useHaptics() {
   const { settings } = useSettings();
 
@@ -18,5 +19,13 @@ export function useHaptics() {
     Haptics.selectionAsync().catch(() => {});
   }
 
-  return { tick };
+  // A firmer buzz, about twice the strength of tick(), for the big page buttons
+  // along the bottom of the screen. It also does nothing when Haptic Feedback is off.
+  function press() {
+    if (!settings.hapticFeedback) return;
+    // "Medium" is one step stronger than the keyboard-style tick.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }
+
+  return { tick, press };
 }
