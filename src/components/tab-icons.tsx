@@ -1,5 +1,5 @@
 import type { ColorValue } from 'react-native';
-import Svg, { Circle, Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 // Every icon in this file is drawn as an SVG: a set of simple shapes (lines, circles,
 // polygons) on a small 24 x 24 grid. "Wireframe" just means we draw only the outlines
@@ -74,6 +74,57 @@ export function CardIcon({ color, size }: IconProps) {
       {/* Two lines of rules text near the bottom of the card. */}
       <Line x1="8" y1="16" x2="16" y2="16" stroke={color} strokeWidth={STROKE} />
       <Line x1="8" y1="18.5" x2="13" y2="18.5" stroke={color} strokeWidth={STROKE} />
+    </Svg>
+  );
+}
+
+// ICON 4 (not a tab icon): two six-sided dice caught in the middle of rolling, used for the
+// "who goes first" button on the life total screen. Each die is a rounded square outline,
+// tipped to a different angle, with its dots drawn as small filled circles.
+export function DiceIcon({ color, size }: IconProps) {
+  // Where each dot sits, measured from the middle of its die. The first die shows a 5,
+  // the second shows a 6.
+  const FIVE = [
+    [-2.4, -2.4],
+    [2.4, -2.4],
+    [0, 0],
+    [-2.4, 2.4],
+    [2.4, 2.4],
+  ];
+  const SIX = [
+    [-2.2, -2.6],
+    [2.2, -2.6],
+    [-2.2, 0],
+    [2.2, 0],
+    [-2.2, 2.6],
+    [2.2, 2.6],
+  ];
+  // Both dice are drawn with their own middle at (0, 0), then moved and tipped by a <G>.
+  const SIDE = 9.5;
+  const dice = [
+    { x: 7, y: 16, tilt: -14, dots: FIVE },
+    { x: 17, y: 8, tilt: 18, dots: SIX },
+  ];
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {dice.map(({ x, y, tilt, dots }) => (
+        <G key={`${x}-${y}`} transform={`translate(${x} ${y}) rotate(${tilt})`}>
+          {/* The die's outline: a square with rounded corners. */}
+          <Rect
+            x={-SIDE / 2}
+            y={-SIDE / 2}
+            width={SIDE}
+            height={SIDE}
+            rx="2"
+            stroke={color}
+            strokeWidth={STROKE}
+          />
+          {/* The dots. */}
+          {dots.map(([dotX, dotY]) => (
+            <Circle key={`${dotX}-${dotY}`} cx={dotX} cy={dotY} r="0.8" fill={color} />
+          ))}
+        </G>
+      ))}
     </Svg>
   );
 }

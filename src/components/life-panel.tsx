@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 
 import { RichText } from '@/components/rich-text';
@@ -10,23 +10,6 @@ import { Spacing } from '@/constants/theme';
 import { useHaptics } from '@/hooks/use-haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { isDefeated } from '@/lib/defeat';
-
-// The + or - sign inside a round button, drawn as thick bars instead of typed as text.
-// A typed character is never perfectly centered, because fonts leave extra space above and
-// below the letters. Bars are placed by the layout, so they sit exactly in the middle.
-//   plus - true draws a + (a horizontal bar crossed by a vertical bar); false draws a -
-//   color - the color of the bars (the panel's text color)
-function AdjustSign({ plus = false, color }: { plus?: boolean; color: string }) {
-  return (
-    // A box the size of the sign. The buttons center this box, and the bars are centered inside it.
-    <View style={styles.sign}>
-      {/* The horizontal bar, used by both + and -. */}
-      <View style={[styles.bar, styles.horizontalBar, { backgroundColor: color }]} />
-      {/* The vertical bar, only for +. It crosses the horizontal one in the middle. */}
-      {plus && <View style={[styles.bar, styles.verticalBar, { backgroundColor: color }]} />}
-    </View>
-  );
-}
 
 // The mark shown in the background of a defeated player's panel: a circle with a slash through
 // it (like a "no entry" sign), outlined in white. It is drawn on a 100 x 100 grid and
@@ -67,6 +50,9 @@ function DefeatMark() {
 // The three sizes a panel can be drawn at. See the "size" note on LifePanel below.
 export type PanelSize = 'normal' | 'compact' | 'small';
 
+// The color of the glow that moves from panel to panel when rolling for who goes first.
+const HIGHLIGHT_COLOR = '#F5C518';
+
 // The text size of the small number in the lower right corner.
 const COUNTER_FONT_SIZE = 28;
 // The {H} symbol is drawn 4 sizes smaller than the number beside it. Because it is worked out
@@ -82,6 +68,11 @@ const DRAG_STEP_PX = 24;
 // How far a finger must slide sideways, in pixels, to count as a swipe (to open or close
 // commander damage).
 const SWIPE_MIN_PX = 40;
+
+// The slide animation that plays when commander damage opens or closes: the numbers glide in
+// from the side over this many milliseconds, starting this many pixels away from their spot.
+const SLIDE_MS = 250;
+const SLIDE_DISTANCE_PX = 160;
 
 // When another player has opened commander damage, THIS panel shows how much damage this
 // player's commander has dealt to them. This is everything the panel needs to know for that:
@@ -105,12 +96,13 @@ function formatChange(change: number): string {
   return '0';
 }
 
-// One player's panel. It shows ONE big number with + and - buttons on the left of it, and a
-// small number in the lower right corner. The two numbers are life and poison counters:
+// One player's panel. It shows ONE big number. Tap the top half of the panel to add 1 and the
+// bottom half to take 1 away (there are no + and - buttons). A small
+// number sits in the lower right corner. The two numbers are life and poison counters:
 //   - Normally the big number is the life total, and the corner shows the {H} symbol with
 //     the poison counters.
-//   - Tap the corner and they SWAP: the big number becomes the poison counters (the + and -
-//     buttons now change those), and the corner shows the life total.
+//   - Tap the corner and they SWAP: the big number becomes the poison counters (taps and
+//     slides now change those), and the corner shows the life total.
 //   - Tap the corner again and they swap back.
 // When the player is defeated (see src/lib/defeat.ts) a white circle with a slash through it
 // appears in the background of the panel.
@@ -134,10 +126,13 @@ function formatChange(change: number): string {
 //                    seen by the person reading this panel
 //   showCommanderHint - true while this player has commander damage open: shows a reminder of
 //                    how to close it
-//   size           - how big the buttons and numbers are, for panels with less room:
+//   highlighted    - true while the "who goes first" roll is lighting up this panel
+//   turnOrder      - this player's place in the turn order (1 goes first), shown in the upper left
+//                    corner once the roll has finished. Nothing is shown when it is not set.
+//   size           - how big the numbers are, for panels with less room:
 //                    'normal' (the full size), 'compact' (the side-by-side panels of the 3 and
 //                    4 player layouts) or 'small' (the shortest panels, in the 5 and 6 player layouts)
-//   playerNumber   - used only to name the buttons for screen readers
+//   playerNumber   - used only to name the tap halves for screen readers
 export function LifePanel({
   life,
   poison,
@@ -151,6 +146,8 @@ export function LifePanel({
   commanderView,
   onSwipe,
   showCommanderHint = false,
+  highlighted = false,
+  turnOrder,
   size = 'normal',
   playerNumber,
 }: {
@@ -166,6 +163,8 @@ export function LifePanel({
   commanderView?: CommanderView;
   onSwipe?: (direction: 'left' | 'right') => void;
   showCommanderHint?: boolean;
+  highlighted?: boolean;
+  turnOrder?: number;
   size?: PanelSize;
   playerNumber: number;
 }) {
@@ -183,7 +182,7 @@ export function LifePanel({
 
   // Which number is the big one right now: false = life (normal), true = poison counters.
   const [showingPoison, setShowingPoison] = useState(false);
-  // The number in the big spot, and its name for the buttons' screen reader labels. While
+  // The number in the big spot, and its name for the tap halves' screen reader labels. While
   // another player has commander damage open, the big number is the damage this player dealt them.
   const bigNumber = commanderView ? commanderView.damage : showingPoison ? poison : life;
   const counterName = commanderView
@@ -197,8 +196,15 @@ export function LifePanel({
   // How far the big number must be turned so it faces the player who opened commander damage
   // (0 when this panel already faces them, or when commander damage isn't open).
   const numberDegrees = commanderView ? (commanderView.facing - ownDegrees + 360) % 360 : 0;
+  // Where the "add" half of the panel is. Normally it is the top half. When the numbers are
+  // turned to face another player, the panel's top may be THEIR bottom (or left or right), so:
+  //   tapSideBySide - the two halves sit left and right instead of top and bottom (the numbers
+  //                   are turned a quarter turn)
+  //   tapPlusFirst  - the "add" half comes first (top or left) rather than second (bottom or right)
+  const tapSideBySide = numberDegrees === 90 || numberDegrees === 270;
+  const tapPlusFirst = numberDegrees === 0 || numberDegrees === 270;
 
-  // The running total of the recent + and - taps, shown in a small badge beside the life total.
+  // The running total of the recent taps, shown in a small badge beside the life total.
   // null means "no recent taps", so no badge is showing.
   const [recentChange, setRecentChange] = useState<number | null>(null);
   // The 5-second countdown that hides the badge. We keep it in a "ref" (a box that holds a
@@ -214,6 +220,27 @@ export function LifePanel({
     setWasInCommander(inCommander);
     setRecentChange(null);
   }
+
+  // ---- THE SLIDE ANIMATION ----
+  // A panel is in one of three "modes": normal, the one whose owner opened commander damage
+  // ("viewer"), or one showing damage dealt to that owner ("other"). Whenever the mode changes
+  // the numbers slide in: opening (a swipe left) slides them in from the right, so they move
+  // left; closing (a swipe right) slides them in from the left, so they move right.
+  const mode = commanderView ? 'other' : showCommanderHint ? 'viewer' : 'normal';
+  // "slide" is a number the animation runs down to 0 (the numbers in place). It starts at 1 when
+  // opening (the numbers far off to the right, invisible) or at -1 when closing (far to the left).
+  const [slide] = useState(() => new Animated.Value(0));
+  // What the mode was last time, so we only animate when it really changes (not when the
+  // panel first appears).
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    if (previousMode.current === mode) return;
+    const opening = previousMode.current === 'normal';
+    previousMode.current = mode;
+    // Jump to the starting spot, then glide to the resting spot.
+    slide.setValue(opening ? 1 : -1);
+    Animated.timing(slide, { toValue: 0, duration: SLIDE_MS, useNativeDriver: true }).start();
+  }, [mode, slide]);
 
   // If this panel goes away while the countdown is running, cancel it.
   useEffect(() => {
@@ -233,7 +260,7 @@ export function LifePanel({
 
   // Called for every tap of + (change = 1) or - (change = -1), and for every step of a drag.
   function handleTap(change: number) {
-    // While another player has commander damage open, + and - change the damage this player
+    // While another player has commander damage open, taps change the damage this player
     // has dealt to them (it can't go below 0). The life change is handled for us.
     if (commanderView) {
       if (commanderView.damage + change < 0) return;
@@ -320,7 +347,8 @@ export function LifePanel({
           }
         },
         // When the finger lifts after a long enough sideways swipe, report which way it went.
-        onPanResponderRelease: () => {          if (dragKind.current !== 'sideways' || Math.abs(sidewaysPx.current) < SWIPE_MIN_PX) return;
+        onPanResponderRelease: () => {
+          if (dragKind.current !== 'sideways' || Math.abs(sidewaysPx.current) < SWIPE_MIN_PX) return;
           latestSwipe.current?.(sidewaysPx.current < 0 ? 'left' : 'right');
         },
       }),
@@ -329,12 +357,12 @@ export function LifePanel({
 
   return (
     // The panel's rounded box. Turning it 180 degrees flips EVERYTHING inside it, so the
-    // buttons stay on that player's left and the numbers read the right way up for them.
+    // tap halves and the numbers read the right way up for that player.
     <ThemedView
       type="backgroundElement"
       accessibilityLabel={defeated ? `Player ${playerNumber} is defeated` : undefined}
       // The "panHandlers" make the WHOLE panel follow a finger dragging up or down, not just the
-      // number. (Taps on the buttons and the corner still work as before.)
+      // number. (Taps on the two halves and on the corner still work as before.)
       {...dragResponder.panHandlers}
       style={[
         styles.panel,
@@ -347,60 +375,49 @@ export function LifePanel({
       {/* The mark showing this player has lost. It comes first so everything else is drawn on top of it. */}
       {defeated && <DefeatMark />}
 
-      {/* LEFT SIDE: the + button above the - button. */}
-      <View style={[styles.buttons, size !== 'normal' && styles.compactButtons]}>
-        <Pressable
-          onPress={() => handleTap(1)}
-          accessibilityRole="button"
-          accessibilityLabel={`Player ${playerNumber}: add 1 ${commanderView ? 'commander damage' : showingPoison ? 'poison counter' : 'life'}`}
-          style={({ pressed }) => [
-            styles.adjustButton,
-            size === 'compact' && styles.compactAdjustButton,
-            size === 'small' && styles.smallAdjustButton,
-            { backgroundColor: buttonColor },
-            pressed && styles.pressed,
-          ]}>
-          <AdjustSign plus color={textColor} />
-        </Pressable>
-        <Pressable
-          onPress={() => handleTap(-1)}
-          accessibilityRole="button"
-          accessibilityLabel={`Player ${playerNumber}: ${commanderView ? 'remove 1 commander damage' : showingPoison ? 'remove 1 poison counter' : 'lose 1 life'}`}
-          style={({ pressed }) => [
-            styles.adjustButton,
-            size === 'compact' && styles.compactAdjustButton,
-            size === 'small' && styles.smallAdjustButton,
-            { backgroundColor: buttonColor },
-            pressed && styles.pressed,
-          ]}>
-          <AdjustSign color={textColor} />
-        </Pressable>
-      </View>
-
-      {/* MIDDLE: the big number (life or poison counters), as large as will fit. While another
+      {/* The big number (life or poison counters), as large as will fit. While another
           player has commander damage open, it is the damage this player dealt them, and the
           number (with a small caption saying what it is) is turned to face that player. */}
       <View style={styles.lifeArea}>
         <View style={[styles.numberBox, { transform: [{ rotate: `${numberDegrees}deg` }] }]}>
-          {commanderView && (
-            <ThemedText type="smallBold" selectable={false} style={[styles.caption, { color: textColor }]}>
-              Commander damage to Player {commanderView.viewer}
-            </ThemedText>
-          )}
-          <ThemedText
-            accessibilityLabel={`Player ${playerNumber} ${counterName}: ${bigNumber}`}
+          {/* The sliding layer. It sits inside the turned box above, so "left" and "right" are
+              the left and right of the player the numbers are turned to face. It starts off to
+              the side and invisible, and glides into place as "slide" runs down to 0. */}
+          <Animated.View
             style={[
-              styles.life,
-              { color: textColor },
-              size === 'compact' && styles.compactLife,
-              size === 'small' && styles.smallLife,
-            ]}
-            adjustsFontSizeToFit
-            // Stops a mouse drag on the web from highlighting the number as if it were text.
-            selectable={false}
-            numberOfLines={1}>
-            {bigNumber}
-          </ThemedText>
+              styles.slideLayer,
+              {
+                opacity: slide.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 1, 0] }),
+                transform: [
+                  {
+                    translateX: slide.interpolate({
+                      inputRange: [-1, 0, 1],
+                      outputRange: [-SLIDE_DISTANCE_PX, 0, SLIDE_DISTANCE_PX],
+                    }),
+                  },
+                ],
+              },
+            ]}>
+            {commanderView && (
+              <ThemedText type="smallBold" selectable={false} style={[styles.caption, { color: textColor }]}>
+                Commander damage to Player {commanderView.viewer}
+              </ThemedText>
+            )}
+            <ThemedText
+              accessibilityLabel={`Player ${playerNumber} ${counterName}: ${bigNumber}`}
+              style={[
+                styles.life,
+                { color: textColor },
+                size === 'compact' && styles.compactLife,
+                size === 'small' && styles.smallLife,
+              ]}
+              adjustsFontSizeToFit
+              // Stops a mouse drag on the web from highlighting the number as if it were text.
+              selectable={false}
+              numberOfLines={1}>
+              {bigNumber}
+            </ThemedText>
+          </Animated.View>
         </View>
 
         {/* THE CHANGE BADGE: just to the left of the life total and centered up and down.
@@ -424,6 +441,44 @@ export function LifePanel({
       {showCommanderHint && (
         <ThemedText type="small" selectable={false} style={[styles.hint, { color: textColor }]}>
           Swipe right to exit
+        </ThemedText>
+      )}
+
+      {/* THE TAP ZONES: the whole panel is split in two. Tapping the top half adds 1 and tapping
+          the bottom half takes 1 away. They sit on top of the numbers (see-through), but below
+          the small corner number, so that still gets its own taps. "box-none" means this layer
+          itself ignores touches and only its two halves react. The halves are laid out for the
+          person the number is turned to face (see tapPlusFirst and tapSideBySide above), so
+          "top" is always the top for them. */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.tapZones, tapSideBySide && styles.tapZonesSideBySide]}>
+        {(tapPlusFirst ? ['plus', 'minus'] : ['minus', 'plus']).map((kind) => (
+          <Pressable
+            key={kind}
+            onPress={() => handleTap(kind === 'plus' ? 1 : -1)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              kind === 'plus'
+                ? `Player ${playerNumber}: add 1 ${commanderView ? 'commander damage' : showingPoison ? 'poison counter' : 'life'}`
+                : `Player ${playerNumber}: ${commanderView ? 'remove 1 commander damage' : showingPoison ? 'remove 1 poison counter' : 'lose 1 life'}`
+            }
+            // While a finger is down, the half lightens or darkens a little so you can see
+            // which half you are pressing.
+            style={({ pressed }) => [styles.tapZone, pressed && { backgroundColor: buttonColor }]}
+          />
+        ))}
+      </View>
+
+      {/* UPPER LEFT: this player's place in the turn order, once the roll has finished. It is
+          in the panel's own upper left, so it reads the right way up for that player. */}
+      {turnOrder !== undefined && (
+        <ThemedText
+          selectable={false}
+          accessibilityLabel={`Player ${playerNumber} turn order: ${turnOrder}`}
+          style={[styles.turnOrder, { color: textColor }]}
+          pointerEvents="none">
+          {turnOrder}
         </ThemedText>
       )}
 
@@ -453,6 +508,10 @@ export function LifePanel({
         )}
       </Pressable>
       )}
+
+      {/* The glow shown while the "who goes first" roll is on this panel: a bright outline and
+          a light tint over the whole panel. Taps pass straight through it. */}
+      {highlighted && <View style={styles.highlight} pointerEvents="none" />}
     </ThemedView>
   );
 }
@@ -476,66 +535,34 @@ const styles = StyleSheet.create({
     padding: Spacing.two,
     gap: Spacing.two,
   },
-  // The column holding the + and - buttons, in the small panel.
-  compactButtons: {
-    gap: Spacing.two,
-  },
-  // A smaller round + or - button (56 across instead of 64).
-  compactAdjustButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
   // The life total (or poison count) in the compact panel: 96 instead of 120.
   compactLife: {
     fontSize: 96,
     lineHeight: 104,
-  },
-  // The 'small' size (used for the shortest panels) shares the compact padding and spacing,
-  // but its + and - buttons are smaller still: 48 across.
-  smallAdjustButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
   },
   // The life total (or poison count) in the small panel: 72.
   smallLife: {
     fontSize: 72,
     lineHeight: 80,
   },
-  // The column holding the + and - buttons.
-  buttons: {
-    gap: Spacing.three,
-  },
-  // A round + or - button.
-  adjustButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // The box that holds a + or - sign. Its bars are centered inside it.
-  sign: {
-    width: 30,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Both bars are 6 thick (bold) with rounded ends, and drawn on top of each other.
-  bar: {
+  // The layer holding the two tap halves: it covers the whole panel (matching its rounded
+  // corners) and stacks the halves top and bottom.
+  tapZones: {
     position: 'absolute',
-    borderRadius: 3,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderRadius: Spacing.four,
+    overflow: 'hidden',
   },
-  // The horizontal bar spans the full width of the sign box.
-  horizontalBar: {
-    width: 30,
-    height: 6,
+  // For a panel whose numbers are turned a quarter turn: the halves sit left and right.
+  tapZonesSideBySide: {
+    flexDirection: 'row',
   },
-  // The vertical bar spans the full height of the sign box.
-  verticalBar: {
-    width: 6,
-    height: 30,
+  // One half. "flex: 1" gives each half the same share of the panel.
+  tapZone: {
+    flex: 1,
   },
   // Slight dimming while a finger is on a button.
   pressed: {
@@ -548,7 +575,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // A full-size, see-through layer over the life area whose only job is to line the badge up:
-  // pushed to the left edge (next to the + and - buttons), and centered from top to bottom.
+  // pushed to the left edge (the left edge of the panel), and centered from top to bottom.
   badgeSlot: {
     position: 'absolute',
     top: 0,
@@ -586,6 +613,32 @@ const styles = StyleSheet.create({
   // as a unit to face the player who opened commander damage.
   numberBox: {
     alignItems: 'center',
+  },
+  // The layer that slides the number (and its caption) in. It lays them out the same way the
+  // box around it does: stacked and centered.
+  slideLayer: {
+    alignItems: 'center',
+  },
+  // The turn order number, in the upper left corner of the panel.
+  turnOrder: {
+    position: 'absolute',
+    top: Spacing.two,
+    left: Spacing.three,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '700',
+  },
+  // The glow: covers the whole panel with a bright outline and a see-through tint.
+  highlight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderRadius: Spacing.four,
+    borderWidth: 6,
+    borderColor: HIGHLIGHT_COLOR,
+    backgroundColor: 'rgba(245, 197, 24, 0.25)',
   },
   // The small caption above a commander damage number.
   caption: {

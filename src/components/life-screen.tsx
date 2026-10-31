@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LifePanel, type PanelSize } from '@/components/life-panel';
 import { RotatedSlot } from '@/components/rotated-slot';
+import { DiceIcon } from '@/components/tab-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -11,6 +12,16 @@ import { useGame } from '@/context/game-context';
 import { useSettings } from '@/context/settings-context';
 import { useTheme } from '@/hooks/use-theme';
 import { playerRotations } from '@/lib/player-layout';
+
+// ---- ROLLING FOR WHO GOES FIRST ----
+// How long each player's panel stays lit while the roll goes around, in milliseconds (half a second).
+const HIGHLIGHT_MS = 500;
+// The roll goes around the table at least this many times before it stops.
+const MIN_ROUNDS = 2;
+// When it stops, the winner's panel blinks this many times, each blink taking BLINK_MS off and
+// BLINK_MS on.
+const BLINKS = 4;
+const BLINK_MS = 200;
 
 // The screen that shows everyone's life totals once the number of players is chosen.
 // Each player count gets its own layout:
@@ -61,11 +72,82 @@ export function LifeScreen({
   // Which game this is (1, 2, 3...). It goes up each time "New game" is tapped.
   const [gameNumber, setGameNumber] = useState(1);
 
+  // ---- THE "WHO GOES FIRST" ROLL ----
+  // rolling       - true while the roll is running (the dice button does nothing then)
+  // litPlayer     - which player's panel is lit up right now (0 is Player 1), or null for none
+  // turnOrder     - once a roll has finished: each player's place in the turn order (the first
+  //                 entry is Player 1's place, and so on; 1 goes first). null before any roll.
+  const [rolling, setRolling] = useState(false);
+  const [litPlayer, setLitPlayer] = useState<number | null>(null);
+  const [turnOrder, setTurnOrder] = useState<number[] | null>(null);
+  // The timers that run the roll. Each lighting up, blink and the final result is one timer,
+  // all set at the moment the dice button is pressed. We keep them so they can be cancelled.
+  const rollTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // If this screen goes away in the middle of a roll, cancel the timers.
+  useEffect(() => {
+    const timers = rollTimers;
+    return () => timers.current.forEach(clearTimeout);
+  }, []);
+
+  // Cancels a roll that is running and clears the lit panel.
+  function stopRoll() {
+    rollTimers.current.forEach(clearTimeout);
+    rollTimers.current = [];
+    setLitPlayer(null);
+    setRolling(false);
+  }
+
+  // The dice button. It lights up the players one at a time going clockwise (players are
+  // numbered clockwise, so that is Player 1, 2, 3...), at least two full times around, then
+  // stops on a random player and blinks. That player goes first, and the others follow clockwise.
+  function rollForTurnOrder() {
+    if (rolling) return;
+    setRolling(true);
+    setTurnOrder(null);
+
+    // Pick the winner now, then work out how many steps the light needs to take to end on them:
+    // at least MIN_ROUNDS times around, plus once more around half of the time so the length
+    // is not always the same.
+    const winner = Math.floor(Math.random() * players);
+    const earliestEnd = MIN_ROUNDS * players - 1;
+    const stepsToWinner = (((winner - earliestEnd) % players) + players) % players;
+    const lastStep = earliestEnd + stepsToWinner + players * Math.floor(Math.random() * 2);
+
+    // Schedules something to happen "ms" milliseconds from now.
+    const later = (ms: number, action: () => void) => {
+      rollTimers.current.push(setTimeout(action, ms));
+    };
+
+    // The light moves to the next player every HIGHLIGHT_MS.
+    for (let step = 0; step <= lastStep; step++) {
+      later(step * HIGHLIGHT_MS, () => setLitPlayer(step % players));
+    }
+    // Then the winner blinks: off, on, off, on...
+    const blinkStart = (lastStep + 1) * HIGHLIGHT_MS;
+    for (let blink = 0; blink < BLINKS; blink++) {
+      later(blinkStart + blink * 2 * BLINK_MS, () => setLitPlayer(null));
+      later(blinkStart + blink * 2 * BLINK_MS + BLINK_MS, () => setLitPlayer(winner));
+    }
+    // Finally the light goes out and the turn order numbers appear: the winner is 1 and the
+    // players after them, going clockwise, are 2, 3, 4...
+    later(blinkStart + BLINKS * 2 * BLINK_MS + BLINK_MS, () => {
+      const order = Array.from({ length: players }, () => 0);
+      for (let place = 0; place < players; place++) order[(winner + place) % players] = place + 1;
+      setLitPlayer(null);
+      setTurnOrder(order);
+      setRolling(false);
+    });
+  }
+
   // Starts over: every player's life goes back to the Starting Life Total, poison counters go
   // back to 0, and we stay on this screen.
   // If you changed Starting Life Total in Settings during the game, the new value is used here.
   function newGame() {
     resetGame(startingLife);
+    // Cancel any roll and take away the turn order numbers: it is a new game.
+    stopRoll();
+    setTurnOrder(null);
     // Close commander damage if someone had it open. (The damage itself is reset to 0 above.)
     setCommanderViewer(null);
     // Counting up changes the panels' "key" below, which makes fresh panels. That also wipes
@@ -113,6 +195,9 @@ export function LifeScreen({
             : undefined
         }
         showCommanderHint={commanderViewer === index}
+        // Lit up while the "who goes first" roll is on this player, and numbered afterwards.
+        highlighted={litPlayer === index}
+        turnOrder={turnOrder?.[index]}
         upsideDown={options.upsideDown}
         rotation={options.rotation}
         size={options.size}
@@ -197,9 +282,9 @@ export function LifeScreen({
           </View>
         )}
 
-        {/* Two small buttons side by side along the bottom of the screen, between the life
-              totals and the tab bar: "New game" resets everyone's life, and "Players" goes
-              back to choosing how many players. They sit in their own row under the panels, so
+        {/* Three small buttons side by side along the bottom of the screen, between the life
+              totals and the tab bar: "New game" resets everyone's life, the dice roll for who
+              goes first, and "Players" goes back to choosing how many players. They sit in their own row under the panels, so
               they never cover a life total. */}
         <View style={styles.controls}>
           <Pressable
@@ -212,6 +297,20 @@ export function LifeScreen({
               pressed && styles.pressed,
             ]}>
             <ThemedText type="smallBold">New game</ThemedText>
+          </Pressable>
+          {/* The dice: rolls for who goes first (see rollForTurnOrder above). */}
+          <Pressable
+            onPress={rollForTurnOrder}
+            accessibilityRole="button"
+            accessibilityLabel="Roll for who goes first"
+            accessibilityState={{ disabled: rolling }}
+            style={({ pressed }) => [
+              styles.pill,
+              styles.diceButton,
+              { backgroundColor: theme.background, borderColor: theme.backgroundSelected },
+              pressed && styles.pressed,
+            ]}>
+            <DiceIcon color={theme.text} size={28} />
           </Pressable>
           <Pressable
             onPress={onExit}
@@ -276,6 +375,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.four,
     borderWidth: 1,
+  },
+  // The dice button: a pill with the dice drawing in it, a bit less padded since the picture
+  // is taller than the words.
+  diceButton: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    justifyContent: 'center',
   },
   // Slight dimming while pressed.
   pressed: {

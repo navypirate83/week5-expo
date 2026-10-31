@@ -19,7 +19,7 @@ const LIFE_TIPS = [
   },
   {
     name: 'Change life',
-    text: 'Tap + or - to change a life total by 1. Or put a finger on a player\'s area and slide it: down lowers the life total, up raises it, 1 point for every small slide. "Up" and "down" are from that player\'s seat, even for areas turned sideways or upside down.',
+    text: 'Tap the top half of a player\'s area to add 1 to the life total, or the bottom half to take 1 away. Or put a finger on a player\'s area and slide it: down lowers the life total, up raises it, 1 point for every small slide. "Up" and "down" are from that player\'s seat, even for areas turned sideways or upside down.',
   },
   {
     name: 'See the recent change',
@@ -27,11 +27,11 @@ const LIFE_TIPS = [
   },
   {
     name: 'Poison counters',
-    text: 'The small {H} and number in the lower right corner of an area are that player\'s poison counters. Tap them and they swap places with the life total, so + and - (and sliding) now change the poison counters. Tap again to swap back. A player at the Max Poison Counters setting is defeated.',
+    text: 'The small {H} and number in the lower right corner of an area are that player\'s poison counters. Tap them and they swap places with the life total, so tapping the top and bottom halves (and sliding) now change the poison counters. Tap again to swap back. A player at the Max Poison Counters setting is defeated.',
   },
   {
     name: 'Commander damage',
-    text: 'Swipe left on your life total to open commander damage. Every other player\'s area now shows how much commander damage they have dealt to YOU, turned to face you. Use + and - or slide a finger on their area to change it. Each point also takes 1 from your life total, and 21 from a single player defeats you (the number keeps counting past 21). Swipe right on your life total to close it.',
+    text: 'Swipe left on your life total to open commander damage. Every other player\'s area now shows how much commander damage they have dealt to YOU, turned to face you. Tap the top or bottom half of their area, or slide a finger on it, to change it. The top and bottom are from your seat. Each point also takes 1 from your life total, and 21 from a single player defeats you (the number keeps counting past 21). Swipe right on your life total to close it.',
   },
   {
     name: 'Defeat',
@@ -71,7 +71,7 @@ const CARD_TIPS = [
 const SETTINGS_TIPS = [
   {
     name: 'Haptic Feedback',
-    text: 'Turns the little vibrations on or off: a light tick for each + and - tap, slide step, switch and dropdown, and a firmer buzz for the bottom buttons.',
+    text: 'Turns the little vibrations on or off: a light tick for each tap, slide step, switch and dropdown, and a firmer buzz for the bottom buttons.',
   },
   {
     name: 'Theme',
