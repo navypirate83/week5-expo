@@ -10,12 +10,13 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useGame } from '@/context/game-context';
 import { useSettings } from '@/context/settings-context';
+import { useHaptics } from '@/hooks/use-haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { playerRotations } from '@/lib/player-layout';
 
 // ---- ROLLING FOR WHO GOES FIRST ----
-// How long each player's panel stays lit while the roll goes around, in milliseconds (half a second).
-const HIGHLIGHT_MS = 500;
+// How long each player's panel stays lit while the roll goes around, in milliseconds (a quarter of a second).
+const HIGHLIGHT_MS = 250;
 // The roll goes around the table at least this many times before it stops.
 const MIN_ROUNDS = 2;
 // When it stops, the winner's panel blinks this many times, each blink taking BLINK_MS off and
@@ -52,6 +53,9 @@ export function LifeScreen({
   onExit: () => void;
 }) {
   const theme = useTheme();
+  // tick() is the light buzz and press() the firmer one. Both stay silent if Haptic Feedback is
+  // off in Settings. The roll uses them as it lights up players and blinks.
+  const { tick, press } = useHaptics();
   // The color each player chose for their life total area, in Settings.
   const { settings } = useSettings();
 
@@ -106,12 +110,14 @@ export function LifeScreen({
     setRolling(true);
     setTurnOrder(null);
 
-    // Pick the winner now, then work out how many steps the light needs to take to end on them:
-    // at least MIN_ROUNDS times around, plus once more around half of the time so the length
-    // is not always the same.
+    // Pick a random player for the light to START on, and a random winner for it to stop on.
+    // Then work out how many steps the light needs to take to end on the winner: at least
+    // MIN_ROUNDS times around, plus once more around half of the time so the length is not
+    // always the same.
+    const start = Math.floor(Math.random() * players);
     const winner = Math.floor(Math.random() * players);
     const earliestEnd = MIN_ROUNDS * players - 1;
-    const stepsToWinner = (((winner - earliestEnd) % players) + players) % players;
+    const stepsToWinner = (((winner - start - earliestEnd) % players) + players) % players;
     const lastStep = earliestEnd + stepsToWinner + players * Math.floor(Math.random() * 2);
 
     // Schedules something to happen "ms" milliseconds from now.
@@ -119,15 +125,23 @@ export function LifeScreen({
       rollTimers.current.push(setTimeout(action, ms));
     };
 
-    // The light moves to the next player every HIGHLIGHT_MS.
+    // The light moves to the next player every HIGHLIGHT_MS, starting from the random player, with a light tick you can feel
+    // each time it lands on someone.
     for (let step = 0; step <= lastStep; step++) {
-      later(step * HIGHLIGHT_MS, () => setLitPlayer(step % players));
+      later(step * HIGHLIGHT_MS, () => {
+        tick();
+        setLitPlayer((start + step) % players);
+      });
     }
-    // Then the winner blinks: off, on, off, on...
+    // Then the winner blinks: off, on, off, on... Each time the glow comes back on there is a
+    // firmer buzz, so the 4 blinks feel different from the lighter ticks of the roll.
     const blinkStart = (lastStep + 1) * HIGHLIGHT_MS;
     for (let blink = 0; blink < BLINKS; blink++) {
       later(blinkStart + blink * 2 * BLINK_MS, () => setLitPlayer(null));
-      later(blinkStart + blink * 2 * BLINK_MS + BLINK_MS, () => setLitPlayer(winner));
+      later(blinkStart + blink * 2 * BLINK_MS + BLINK_MS, () => {
+        press();
+        setLitPlayer(winner);
+      });
     }
     // Finally the light goes out and the turn order numbers appear: the winner is 1 and the
     // players after them, going clockwise, are 2, 3, 4...
