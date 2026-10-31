@@ -35,19 +35,19 @@ export function useCardDetails(name: string | null) {
 
   // Runs again every time a different card is chosen.
   useEffect(() => {
-    if (!name) {
-      setStatus('idle');
-      setData(null);
-      return;
-    }
+    // No card chosen: nothing to look up. (What we return at the bottom already says "idle"
+    // and shows no card in this case, so there is nothing to reset here.)
+    if (!name) return;
 
     // If the user picks another card before this lookup finishes, "cancelled" becomes true
     // and the slow answer for the old card is thrown away instead of replacing the new one.
     let cancelled = false;
-    setError(null);
-    setFromSaved(false);
 
     (async () => {
+      // Clear the previous card's error and "saved copy" note before starting.
+      setError(null);
+      setFromSaved(false);
+
       // Step 1: show the saved copy straight away if there is one.
       let saved: Saved | null = null;
       try {
@@ -95,5 +95,8 @@ export function useCardDetails(name: string | null) {
     };
   }, [name]);
 
+  // With no card chosen we always report "idle" with nothing to show, even if an earlier
+  // card's results are still stored in the state above.
+  if (!name) return { status: 'idle' as Status, card: null, rulings: [], error: null, fromSaved: false };
   return { status, card: data?.card ?? null, rulings: data?.rulings ?? [], error, fromSaved };
 }

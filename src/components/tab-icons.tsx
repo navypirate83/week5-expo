@@ -1,5 +1,5 @@
 import type { ColorValue } from 'react-native';
-import Svg, { Circle, Line, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 // Every icon in this file is drawn as an SVG: a set of simple shapes (lines, circles,
 // polygons) on a small 24 x 24 grid. "Wireframe" just means we draw only the outlines

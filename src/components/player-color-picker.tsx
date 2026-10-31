@@ -72,16 +72,19 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.two,
   },
-  // The six buttons side by side. They wrap onto a second line on a very narrow screen.
+  // The six buttons side by side in ONE line that always fits across the screen (no wrapping).
   buttons: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
+    justifyContent: 'space-between',
+    gap: Spacing.one,
   },
-  // One round button, with room for the ring around the symbol.
+  // One round button. "flex: 1" makes the six buttons share the row's width equally, "aspectRatio: 1"
+  // keeps each one a perfect circle, and "maxWidth" stops them from growing bigger than
+  // BUTTON_SIZE on wide screens. On a phone like the OnePlus 13 they shrink a little if needed.
   button: {
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
+    flex: 1,
+    aspectRatio: 1,
+    maxWidth: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
     borderWidth: 3,
     alignItems: 'center',

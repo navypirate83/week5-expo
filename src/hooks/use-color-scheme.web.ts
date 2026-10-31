@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { useSettings } from '@/context/settings-context';
@@ -12,11 +12,15 @@ import { useSettings } from '@/context/settings-context';
 // because the pre-built page can't know the browser's mode.
 export function useColorScheme() {
   const { settings } = useSettings();
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
+  // "Has the page finished loading in the browser?" It says false while the pre-built page is
+  // made, and true once it is running in the browser. (This replaces a useEffect that set the
+  // answer by hand, which React's checker flags. Nothing ever changes later, so subscribing
+  // does nothing.)
+  const hasHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   const systemScheme = useSystemColorScheme();
 
